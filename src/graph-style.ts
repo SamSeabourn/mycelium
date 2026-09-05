@@ -60,8 +60,10 @@ export function graphStyle(): StylesheetJson {
     },
     ...outlineRules,
     // Related files stay visible but recede — one step back per hop.
-    { selector: 'node[hop = "1"]', style: { opacity: 0.72, width: 13, height: 13, 'font-size': 10 } },
-    { selector: 'node[hop = "2"]', style: { opacity: 0.45, width: 11, height: 11, 'font-size': 10 } },
+    { selector: 'node[hop = "1"]', style: { opacity: 0.75, width: 13, height: 13, 'font-size': 10 } },
+    { selector: 'node[hop = "2"]', style: { opacity: 0.45, width: 11, height: 11, 'font-size': 9 } },
+    // Third ring is context only — at this distance a label is noise, so it goes.
+    { selector: 'node[hop = "3"]', style: { opacity: 0.22, width: 9, height: 9, label: '' } },
     {
       selector: 'node[change = "A"]',
       style: { 'background-color': ADDED, 'border-color': '#1d5c2c', 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 13 },
@@ -122,8 +124,12 @@ export function hashPick(id: string, buckets: number): number {
   return Math.abs(h) % buckets;
 }
 
-/** Bend amount for an edge, in pixels, derived from its id so it never jitters. */
+/**
+ * Bend amount for an edge, in pixels, derived from its id so it never jitters.
+ * Wide enough that edges between the same pair of nodes fan apart rather than
+ * stacking their arrowheads on top of each other.
+ */
 export function edgeBend(id: string): number {
   const pick = hashPick(id, 9);
-  return (pick - 4) * 7; // -28 .. 28
+  return (pick - 4) * 16; // -64 .. 64
 }

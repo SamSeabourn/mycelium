@@ -9,9 +9,7 @@ import {
   type ChangeStatus,
   type DiffRow,
 } from './git';
-import { hiddenNeighbours, restrict, withinHops } from './subgraph';
-
-const HOPS = 2;
+import { HOPS, hiddenNeighbours, restrict, withinHops } from './subgraph';
 
 export type Project =
   | { ok: true; root: string; branches: string[]; current: string; base: string }
@@ -25,7 +23,7 @@ export type Analysis =
       changed: Record<string, ChangeStatus>;
       hop: Record<string, number>;
       missing: string[];
-      /** kept file -> neighbours the 2-hop cut removed, drawn as ghosts */
+      /** kept file -> neighbours the hop cut removed, drawn as ghosts */
       ghosts: Record<string, string[]>;
     }
   | { ok: false; error: string };

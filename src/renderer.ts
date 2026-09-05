@@ -2,6 +2,7 @@ import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import type { Analysis, FileDiff, Project } from './main';
 import type { ChangeStatus } from './git';
 import { edgeBend, graphStyle, hashPick, OUTLINES } from './graph-style';
+import { HOPS } from './subgraph';
 
 declare global {
   interface Window {
@@ -227,10 +228,10 @@ function showGhost(id: string) {
   panel.innerHTML =
     name === '+'
       ? `<h2>${hidden.length} more connections</h2>
-         <p class="dim">Connected to <strong>${esc(parent)}</strong> but outside the 2-hop window, so not drawn in full.</p>
+         <p class="dim">Connected to <strong>${esc(parent)}</strong> but outside the ${HOPS}-hop window, so not drawn in full.</p>
          <ul>${hidden.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
       : `<h2>${esc(name)}</h2>
-         <p class="dim">Outside the 2-hop window. Connected to <strong>${esc(parent)}</strong>.</p>`;
+         <p class="dim">Outside the ${HOPS}-hop window. Connected to <strong>${esc(parent)}</strong>.</p>`;
 
   if (diffOpen) setWide(false);
 }
@@ -309,11 +310,19 @@ function layoutFor(): cytoscape.LayoutOptions {
   return {
     name: 'cose',
     animate: false,
-    nodeRepulsion: 26000,
-    idealEdgeLength: 145,
-    nodeOverlap: 40,
-    gravity: 0.6,
-    padding: 40,
+    randomize: true,
+    // Hubs are the crowded part, not the map as a whole. Strong repulsion with
+    // slack springs (low elasticity) lets a hub's neighbours push apart instead of
+    // being reeled back in; gravity stays moderate so components don't drift into
+    // empty space and shrink everything on fit.
+    nodeRepulsion: 240000,
+    idealEdgeLength: 170,
+    edgeElasticity: 18,
+    nodeOverlap: 120,
+    gravity: 0.45,
+    componentSpacing: 160,
+    numIter: 3000,
+    padding: 50,
   } as cytoscape.LayoutOptions;
 }
 

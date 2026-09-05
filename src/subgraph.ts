@@ -1,3 +1,6 @@
+/** How far out from a changed file still counts as related. */
+export const HOPS = 3;
+
 /**
  * Pick the changed files plus everything within `hops` of them.
  *
