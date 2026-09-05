@@ -1,6 +1,7 @@
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import type { Analysis, FileDiff, Project } from './main';
 import type { ChangeStatus } from './git';
+import { edgeBend, graphStyle, hashPick, OUTLINES } from './graph-style';
 
 declare global {
   interface Window {
@@ -57,11 +58,16 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
       label: id.split('/').pop() ?? id,
       change: changed[id] ?? '',
       hop: String(hop[id] ?? 0),
+      // Which hand-drawn outline this node wears, fixed by path so it is stable.
+      poly: String(hashPick(id, OUTLINES.length)),
     },
   }));
 
   const edges: ElementDefinition[] = Object.entries(g).flatMap(([file, deps]) =>
-    deps.map((dep) => ({ data: { id: `${file}->${dep}`, source: file, target: dep } })),
+    deps.map((dep) => {
+      const id = `${file}->${dep}`;
+      return { data: { id, source: file, target: dep, bend: edgeBend(id) } };
+    }),
   );
 
   return [...nodes, ...edges];
@@ -281,49 +287,7 @@ function render(result: Extract<Analysis, { ok: true }>) {
   cy = cytoscape({
     container: cyEl,
     elements,
-    style: [
-      {
-        selector: 'node',
-        style: {
-          'background-color': '#fffdf6',
-          'border-color': '#6b7fa8',
-          'border-width': 1.5,
-          label: 'data(label)',
-          color: '#24242a',
-          // Handwriting faces are unreadable at graph sizes, so labels stay plain.
-          'font-family': '-apple-system, BlinkMacSystemFont, sans-serif',
-          'font-size': 9,
-          'text-valign': 'bottom',
-          'text-margin-y': 4,
-          width: 14,
-          height: 14,
-        },
-      },
-      // Related files stay visible but recede — one step back per hop.
-      { selector: 'node[hop = "1"]', style: { opacity: 0.7, width: 11, height: 11, 'font-size': 8 } },
-      { selector: 'node[hop = "2"]', style: { opacity: 0.42, width: 9, height: 9, 'font-size': 7 } },
-      {
-        selector: 'node[change = "A"]',
-        style: { 'background-color': '#2e8b45', 'border-color': '#1d5c2c', opacity: 1, width: 19, height: 19, 'font-size': 11 },
-      },
-      {
-        selector: 'node[change = "M"], node[change = "R"]',
-        style: { 'background-color': '#e8a020', 'border-color': '#8a5c00', opacity: 1, width: 19, height: 19, 'font-size': 11 },
-      },
-      {
-        selector: 'edge',
-        style: {
-          width: 1.2,
-          'line-color': '#9a9384',
-          'target-arrow-color': '#9a9384',
-          'target-arrow-shape': 'triangle',
-          'arrow-scale': 0.7,
-          'curve-style': 'bezier',
-        },
-      },
-      { selector: 'node:selected', style: { 'background-color': '#2f5fd0', 'border-color': '#1a3b8a', width: 22, height: 22, opacity: 1 } },
-      { selector: '.dimmed', style: { opacity: 0.1 } },
-    ],
+    style: graphStyle(),
     layout: layoutFor(Object.keys(changed)),
   });
 
