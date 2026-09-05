@@ -156,7 +156,13 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
     })
     .join('');
 
-  return `<div class="diff-scroll"><table class="diff">${body}</table></div>`;
+  // table-layout:fixed takes column widths from the first row — and the first row
+  // is usually a colspan=4 hunk header, which would split the table into four equal
+  // columns and leave a gutter as wide as the code. A colgroup pins them instead.
+  const cols =
+    '<colgroup><col class="c-no" /><col class="c-code" /><col class="c-no" /><col class="c-code" /></colgroup>';
+
+  return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
 }
 
 async function showDiff(file: string) {

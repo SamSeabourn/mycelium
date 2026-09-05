@@ -174,14 +174,14 @@
         table-layout: fixed;
       }
       table.diff td { padding: 0 6px; vertical-align: top; white-space: pre-wrap; word-break: break-word; }
+      col.c-no { width: 42px; }
+      col.c-code { width: calc(50% - 42px); }
       td.no {
-        width: 40px;
         text-align: right;
         color: var(--dim);
         user-select: none;
         border-right: 1px solid var(--rule);
       }
-      td.code { width: calc(50% - 40px); }
       tr.del td.code.left { background: #fadcd9; }
       tr.add td.code.right { background: #d9f2de; }
       tr.gap td { background: #ece7da; color: var(--dim); font-size: 11px; padding: 2px 6px; }
