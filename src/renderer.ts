@@ -316,12 +316,12 @@ function layoutFor(): cytoscape.LayoutOptions {
     // middle. Firm gravity keeps the drawing compact so the zoom stays close, while
     // heavy repulsion and node overlap do the local separating. The extra heat and
     // slow cooling give those forces enough iterations to actually resolve.
-    nodeRepulsion: 400000,
-    idealEdgeLength: 110,
+    nodeRepulsion: 320000,
+    idealEdgeLength: 88,
     edgeElasticity: 10,
-    nodeOverlap: 220,
+    nodeOverlap: 176,
     gravity: 1.4,
-    componentSpacing: 120,
+    componentSpacing: 96,
     initialTemp: 2500,
     coolingFactor: 0.98,
     minTemp: 1,
