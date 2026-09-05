@@ -1,21 +1,28 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import { scan } from './scan';
 import {
   branches,
   changedFiles,
+  changedLines,
   fileDiff,
   withBranchCheckout,
   type ChangeStatus,
   type DiffRow,
 } from './git';
-import { HOPS, hiddenNeighbours, restrict, withinHops } from './subgraph';
+import { HOPS, withinHops } from './subgraph';
+import { buildFunctionGraph, markChangedFunctions, parseFile, type FnDef } from './functions';
 
 export type Project =
   | { ok: true; root: string; branches: string[]; current: string; base: string }
   | { ok: true; root: string; branches: []; current: ''; base: ''; error: string }
   | null;
 
+/**
+ * Nodes are functions, keyed "file#name". `label` and `file` let the renderer show
+ * a short name on the graph while still knowing which file to diff on click.
+ */
 export type Analysis =
   | {
       ok: true;
@@ -23,8 +30,10 @@ export type Analysis =
       changed: Record<string, ChangeStatus>;
       hop: Record<string, number>;
       missing: string[];
-      /** kept file -> neighbours the hop cut removed, drawn as ghosts */
+      /** caller id -> call targets whose file fell outside the hop window */
       ghosts: Record<string, string[]>;
+      label: Record<string, string>;
+      file: Record<string, string>;
     }
   | { ok: false; error: string };
 
@@ -87,6 +96,11 @@ ipcMain.handle(
       return { ok: false, error: `No changes between ${opts.base} and ${opts.compare}` };
     }
 
+    const lines = await changedLines(projectRoot, opts.base, opts.compare);
+    if (!lines.ok) return lines;
+
+    // Everything needing the compare branch on disk happens in here, so the throwaway
+    // worktree is still around when the parser reads files.
     const work = async (dir: string): Promise<Analysis> => {
       const scanned = await scan(projectRoot, dir);
       if (!scanned.ok) return scanned;
@@ -102,15 +116,49 @@ ipcMain.handle(
         };
       }
 
+      // Hops still run over the file graph: it is what bounds how much source gets
+      // parsed. The functions inside those files are what actually gets drawn.
       const { files, distance } = withinHops(scanned.graph, seeds, HOPS);
+
+      const read = (f: string): string | null => {
+        try {
+          return fs.readFileSync(path.join(dir, f), 'utf8');
+        } catch {
+          return null;
+        }
+      };
+
+      const fns = buildFunctionGraph([...files], scanned.graph, read);
+      if (Object.keys(fns.graph).length === 0) {
+        return { ok: false, error: 'No named functions found in the changed files or their neighbours.' };
+      }
+
+      // Re-parse the changed files for line spans and intersect with the diff hunks.
+      // Without this every function in a touched file would look changed.
+      const defs: FnDef[] = [];
+      for (const f of seeds) {
+        const code = read(f);
+        if (code !== null) defs.push(...parseFile(f, code).defs);
+      }
+      const touched = new Set(markChangedFunctions(defs, lines.lines));
+
+      const fnChanged: Record<string, ChangeStatus> = {};
+      const fnHop: Record<string, number> = {};
+      for (const id of Object.keys(fns.graph)) {
+        const owner = fns.file[id];
+        if (touched.has(id)) fnChanged[id] = changed[owner] === 'A' ? 'A' : 'M';
+        fnHop[id] = distance.get(owner) ?? HOPS;
+      }
 
       return {
         ok: true,
-        graph: restrict(scanned.graph, files),
-        changed,
-        hop: Object.fromEntries(distance),
+        graph: fns.graph,
+        changed: fnChanged,
+        hop: fnHop,
         missing,
-        ghosts: hiddenNeighbours(scanned.graph, files),
+        ghosts: fns.ghosts,
+        label: fns.label,
+        file: fns.file,
       };
     };
 

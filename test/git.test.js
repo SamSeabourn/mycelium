@@ -84,3 +84,4 @@ test('parseNameStatus on empty output returns nothing', () => {
   assert.deepEqual(parseNameStatus(''), {});
   assert.deepEqual(parseNameStatus('\n\n'), {});
 });
+

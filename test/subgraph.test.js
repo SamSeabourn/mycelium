@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { withinHops, restrict, hiddenNeighbours } = require('../dist/subgraph.js');
+const { withinHops } = require('../dist/subgraph.js');
 
 // a -> b -> c -> d -> e
 const chain = {
@@ -43,33 +43,6 @@ test('withinHops tolerates a seed missing from the graph', () => {
   assert.deepEqual([...files], ['gone.js']);
 });
 
-test('hiddenNeighbours reports what the cut removed, in both directions', () => {
-  const { files } = withinHops(chain, ['a.js'], 1); // keeps a, b
-  const hidden = hiddenNeighbours(chain, files);
 
-  // b.js imports c.js, which fell outside — that is exactly what a ghost shows.
-  assert.deepEqual(hidden, { 'b.js': ['c.js'] });
-  assert.ok(!('a.js' in hidden), 'a.js has no neighbour outside the set');
-});
 
-test('hiddenNeighbours finds importers, not just imports', () => {
-  // Keep only c.js: b.js imports it, d.js is imported by it. Both are hidden.
-  const hidden = hiddenNeighbours(chain, new Set(['c.js']));
 
-  assert.deepEqual(hidden['c.js'], ['b.js', 'd.js']);
-});
-
-test('hiddenNeighbours is empty when the set covers everything', () => {
-  const { files } = withinHops(chain, ['c.js'], 5);
-
-  assert.deepEqual(hiddenNeighbours(chain, files), {});
-});
-
-test('restrict drops edges leaving the kept set', () => {
-  const { files } = withinHops(chain, ['a.js'], 1);
-  const out = restrict(chain, files);
-
-  assert.deepEqual(Object.keys(out).sort(), ['a.js', 'b.js']);
-  assert.deepEqual(out['a.js'], ['b.js']);
-  assert.deepEqual(out['b.js'], [], 'c.js is outside the set, so the edge must go');
-});

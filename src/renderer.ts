@@ -43,6 +43,11 @@ let graph: Record<string, string[]> = {};
 let changed: Record<string, ChangeStatus> = {};
 let hop: Record<string, number> = {};
 let ghosts: Record<string, string[]> = {};
+let label: Record<string, string> = {};
+let owner: Record<string, string> = {};
+
+/** Node ids are "file#name"; the diff view needs the file half. */
+const fileOf = (id: string) => owner[id] ?? id;
 
 function importersOf(file: string): string[] {
   return Object.keys(graph).filter((k) => graph[k].includes(file));
@@ -61,7 +66,10 @@ function ghostElements(): ElementDefinition[] {
   for (const [parent, hidden] of Object.entries(ghosts)) {
     const stubs =
       hidden.length <= GHOST_MAX
-        ? hidden.map((h) => ({ id: `${GHOST_PREFIX}${parent}|${h}`, label: h.split('/').pop() ?? h }))
+        ? hidden.map((h) => ({
+            id: `${GHOST_PREFIX}${parent}|${h}`,
+            label: h.includes('#') ? h.slice(h.indexOf('#') + 1) : (h.split('/').pop() ?? h),
+          }))
         : [{ id: `${GHOST_PREFIX}${parent}|+`, label: `+${hidden.length} more` }];
 
     for (const stub of stubs) {
@@ -87,7 +95,7 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
   const nodes: ElementDefinition[] = [...ids].map((id) => ({
     data: {
       id,
-      label: id.split('/').pop() ?? id,
+      label: label[id] ?? id.split('/').pop() ?? id,
       change: changed[id] ?? '',
       hop: String(hop[id] ?? 0),
       // Which hand-drawn outline this node wears, fixed by path so it is stable.
@@ -232,11 +240,11 @@ function showGhost(id: string) {
 
   panel.innerHTML =
     name === '+'
-      ? `<h2>${hidden.length} more connections</h2>
-         <p class="dim">Connected to <strong>${esc(parent)}</strong> but outside the ${HOPS}-hop window, so not drawn in full.</p>
+      ? `<h2>${hidden.length} more calls</h2>
+         <p class="dim">Called by <strong>${esc(label[parent] ?? parent)}</strong> but defined outside the ${HOPS}-hop window, so not drawn in full.</p>
          <ul>${hidden.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
-      : `<h2>${esc(name)}</h2>
-         <p class="dim">Outside the ${HOPS}-hop window. Connected to <strong>${esc(parent)}</strong>.</p>`;
+      : `<h2>${esc(name.includes('#') ? name.slice(name.indexOf('#') + 1) : name)}</h2>
+         <p class="dim">Defined in <strong>${esc(name.split('#')[0])}</strong>, outside the ${HOPS}-hop window. Called by ${esc(label[parent] ?? parent)}.</p>`;
 
   if (diffOpen) setWide(false);
 }
@@ -249,20 +257,23 @@ function showFile(id: string) {
     : `<p class="dim">unchanged — ${hop[id] ?? 0} hop(s) from a change</p>`;
 
   const hasDiff = changed[id] !== undefined;
+  const file = fileOf(id);
+  const pretty = (ids: string[]) => ids.map((i) => `${label[i] ?? i}   ${owner[i] ?? ''}`);
 
   panel.innerHTML = `
-    <h2>${esc(id)}</h2>
+    <h2>${esc(label[id] ?? id)}</h2>
+    <p class="dim">${esc(file)}</p>
     ${state}
     <button id="open-file">Open file</button>
     ${hasDiff ? '<button id="hide-diff">Hide diff</button>' : ''}
-    ${hasDiff ? `<div class="diff-head"><strong>${esc(id)}</strong><span class="dim">${esc(baseSel.value)} … ${esc(compareSel.value)}</span></div>` : ''}
+    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="dim">${esc(baseSel.value)} … ${esc(compareSel.value)}</span></div>` : ''}
     <div id="diff-body"></div>
-    ${fileList('Imports', graph[id] ?? [])}
-    ${fileList('Imported by', importersOf(id))}
+    ${fileList('Calls', pretty(graph[id] ?? []))}
+    ${fileList('Called by', pretty(importersOf(id)))}
   `;
 
   document.getElementById('open-file')?.addEventListener('click', async () => {
-    const err = await window.diffish.openFile(id);
+    const err = await window.diffish.openFile(file);
     if (err) panel.insertAdjacentHTML('afterbegin', `<p class="error">${esc(err)}</p>`);
   });
 
@@ -277,7 +288,7 @@ function showFile(id: string) {
   // with it. Unchanged neighbours have nothing to show, so the panel stays narrow.
   if (hasDiff) {
     setWide(true);
-    void showDiff(id);
+    void showDiff(file);
   } else if (diffOpen) {
     setWide(false);
   }
@@ -298,7 +309,7 @@ function summary(missing: string[]): string {
   const deleted =
     missing.length > 0
       ? `<h3>Deleted files <span class="count">${missing.length}</span></h3>
-         <p class="dim">Not on the compare branch, so not drawn.</p>
+         <p class="dim">Not on the compare branch, so they have no functions to draw.</p>
          <ul>${missing.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
       : '';
 
@@ -337,6 +348,8 @@ function render(result: Extract<Analysis, { ok: true }>) {
   changed = result.changed;
   hop = result.hop;
   ghosts = result.ghosts;
+  label = result.label;
+  owner = result.file;
 
   const elements = toElements(graph);
   const edgeCount = elements.filter((e) => 'source' in e.data).length;
@@ -356,8 +369,8 @@ function render(result: Extract<Analysis, { ok: true }>) {
   const ghostCount = Object.values(ghosts).reduce((n, list) => n + list.length, 0);
   const real = Object.keys(graph).length;
   status.textContent =
-    `${changedCount} changed, ${real - changedCount} related — ${edgeCount} imports` +
-    (ghostCount > 0 ? ` · ${ghostCount} hidden` : '');
+    `${changedCount} changed, ${real - changedCount} related functions — ${edgeCount} calls` +
+    (ghostCount > 0 ? ` · ${ghostCount} out of scope` : '');
 
   panel.innerHTML = summary(result.missing);
   search.value = '';
