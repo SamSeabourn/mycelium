@@ -1,8 +1,11 @@
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
+import fcose from 'cytoscape-fcose';
 import type { Analysis, FileDiff, Project } from './main';
 import type { ChangeStatus } from './git';
 import { edgeBend, graphStyle, hashPick, OUTLINES } from './graph-style';
 import { HOPS } from './subgraph';
+
+cytoscape.use(fcose);
 
 declare global {
   interface Window {
@@ -305,28 +308,25 @@ function summary(missing: string[]): string {
  * layout cannot — it also has no roots to layer from once ghost stubs are in.
  */
 function layoutFor(): cytoscape.LayoutOptions {
-  // tradeoff: cose gets slow and hairy past ~2000 nodes.
-  // Upgrade path: collapse by folder, then cytoscape-fcose if still needed.
+  // tradeoff: quality:'proof' is the slow setting and gets heavy past ~2000 nodes.
+  // Upgrade path: drop to 'default' on large graphs, then collapse by folder.
   return {
-    name: 'cose',
+    name: 'fcose',
     animate: false,
     randomize: true,
-    // Hub crowding, not overall size, is the problem — and a sprawling layout makes
-    // it worse, because fit() zooms out to contain the outliers and squeezes the
-    // middle. Firm gravity keeps the drawing compact so the zoom stays close, while
-    // heavy repulsion and node overlap do the local separating. The extra heat and
-    // slow cooling give those forces enough iterations to actually resolve.
-    nodeRepulsion: 320000,
-    idealEdgeLength: 88,
-    edgeElasticity: 10,
-    nodeOverlap: 176,
-    gravity: 1.4,
-    componentSpacing: 96,
-    initialTemp: 2500,
-    coolingFactor: 0.98,
-    minTemp: 1,
-    numIter: 4000,
-    padding: 50,
+    // fcose handles hub-and-spoke properly, which built-in cose does not: it gives
+    // the hub itself room rather than only fanning its leaves.
+    quality: 'proof',
+    nodeSeparation: 190,
+    idealEdgeLength: 140,
+    nodeRepulsion: 45000,
+    edgeElasticity: 0.3,
+    gravity: 0.2,
+    gravityRange: 4.5,
+    // Disconnected pieces get packed instead of flung out, so fit() stays close in.
+    packComponents: true,
+    numIter: 3500,
+    padding: 40,
   } as cytoscape.LayoutOptions;
 }
 

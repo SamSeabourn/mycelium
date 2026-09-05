@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "cytoscape": "3.34.2",
+    "cytoscape-fcose": "2.2.0",
     "madge": "8.0.0"
   },
   "devDependencies": {
