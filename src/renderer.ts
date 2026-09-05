@@ -161,7 +161,7 @@ async function showDiff(file: string) {
 
 function showFile(id: string) {
   const state = changed[id]
-    ? `<p><span class="swatch" style="background:${changed[id] === 'A' ? '#3fb950' : '#d29922'}"></span> ${CHANGE_LABEL[changed[id]]} in this diff</p>`
+    ? `<p><span class="swatch" style="background:${changed[id] === 'A' ? '#2e8b45' : '#e8a020'}"></span> ${CHANGE_LABEL[changed[id]]} in this diff</p>`
     : `<p class="dim">unchanged — ${hop[id] ?? 0} hop(s) from a change</p>`;
 
   const hasDiff = changed[id] !== undefined;
@@ -206,9 +206,9 @@ function summary(missing: string[]): string {
   }, {});
 
   const legend = `<ul class="legend">
-      <li><span class="swatch" style="background:#3fb950"></span>added ${counts.A ?? 0}</li>
-      <li><span class="swatch" style="background:#d29922"></span>modified ${(counts.M ?? 0) + (counts.R ?? 0)}</li>
-      <li><span class="swatch" style="background:#5b8def;opacity:.55"></span>related</li>
+      <li><span class="swatch" style="background:#2e8b45"></span>added ${counts.A ?? 0}</li>
+      <li><span class="swatch" style="background:#e8a020"></span>modified ${(counts.M ?? 0) + (counts.R ?? 0)}</li>
+      <li><span class="swatch" style="background:#6b7fa8;opacity:.7"></span>related</li>
     </ul>`;
 
   const deleted =
@@ -258,35 +258,44 @@ function render(result: Extract<Analysis, { ok: true }>) {
       {
         selector: 'node',
         style: {
-          'background-color': '#5b8def',
+          'background-color': '#fffdf6',
+          'border-color': '#6b7fa8',
+          'border-width': 1.5,
           label: 'data(label)',
-          color: '#c9d1d9',
+          color: '#24242a',
+          // Handwriting faces are unreadable at graph sizes, so labels stay plain.
+          'font-family': '-apple-system, BlinkMacSystemFont, sans-serif',
           'font-size': 9,
           'text-valign': 'bottom',
-          'text-margin-y': 3,
+          'text-margin-y': 4,
           width: 14,
           height: 14,
         },
       },
       // Related files stay visible but recede — one step back per hop.
-      { selector: 'node[hop = "1"]', style: { opacity: 0.55, width: 10, height: 10, 'font-size': 8 } },
-      { selector: 'node[hop = "2"]', style: { opacity: 0.3, width: 8, height: 8, 'font-size': 7 } },
-      { selector: 'node[change = "A"]', style: { 'background-color': '#3fb950', opacity: 1, width: 18, height: 18, 'font-size': 10 } },
-      { selector: 'node[change = "M"]', style: { 'background-color': '#d29922', opacity: 1, width: 18, height: 18, 'font-size': 10 } },
-      { selector: 'node[change = "R"]', style: { 'background-color': '#d29922', opacity: 1, width: 18, height: 18, 'font-size': 10 } },
+      { selector: 'node[hop = "1"]', style: { opacity: 0.7, width: 11, height: 11, 'font-size': 8 } },
+      { selector: 'node[hop = "2"]', style: { opacity: 0.42, width: 9, height: 9, 'font-size': 7 } },
+      {
+        selector: 'node[change = "A"]',
+        style: { 'background-color': '#2e8b45', 'border-color': '#1d5c2c', opacity: 1, width: 19, height: 19, 'font-size': 11 },
+      },
+      {
+        selector: 'node[change = "M"], node[change = "R"]',
+        style: { 'background-color': '#e8a020', 'border-color': '#8a5c00', opacity: 1, width: 19, height: 19, 'font-size': 11 },
+      },
       {
         selector: 'edge',
         style: {
-          width: 1,
-          'line-color': '#39404d',
-          'target-arrow-color': '#39404d',
+          width: 1.2,
+          'line-color': '#9a9384',
+          'target-arrow-color': '#9a9384',
           'target-arrow-shape': 'triangle',
-          'arrow-scale': 0.6,
+          'arrow-scale': 0.7,
           'curve-style': 'bezier',
         },
       },
-      { selector: 'node:selected', style: { 'background-color': '#f0883e', width: 20, height: 20, opacity: 1 } },
-      { selector: '.dimmed', style: { opacity: 0.08 } },
+      { selector: 'node:selected', style: { 'background-color': '#2f5fd0', 'border-color': '#1a3b8a', width: 22, height: 22, opacity: 1 } },
+      { selector: '.dimmed', style: { opacity: 0.1 } },
     ],
     layout: layoutFor(Object.keys(changed)),
   });

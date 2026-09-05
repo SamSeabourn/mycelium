@@ -6,12 +6,15 @@
     <title>diffish</title>
     <style>
       :root {
-        --bg: #14161a;
-        --panel: #1b1e24;
-        --line: #2a2f38;
-        --text: #c9d1d9;
-        --dim: #6e7681;
-        --accent: #5b8def;
+        --paper: #f6f2e8;
+        --panel: #fffdf6;
+        --ink: #24242a;
+        --dim: #7a756a;
+        --rule: #c9c2b2;
+        --accent: #2f5fd0;
+        --added: #2e8b45;
+        --modified: #c07800;
+        --related: #6b7fa8;
       }
       * { box-sizing: border-box; }
       body {
@@ -19,59 +22,143 @@
         height: 100vh;
         display: grid;
         grid-template-rows: auto 1fr;
-        background: var(--bg);
-        color: var(--text);
-        font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--paper);
+        color: var(--ink);
+        /* Handwriting faces that ship with macOS — no webfont, so nothing to load
+           and nothing for the CSP to block. */
+        font: 15px/1.5 "Bradley Hand", "Chalkboard SE", "Marker Felt", "Comic Sans MS", cursive;
       }
+
+      /* One reusable sketchy outline. It sits on a pseudo-element so the wobble
+         hits the border only — filtering the element itself smears its text. */
+      .sketch { position: relative; border: 0; background: transparent; }
+      .sketch::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border: 1.5px solid var(--ink);
+        border-radius: 4px;
+        filter: url(#rough);
+        pointer-events: none;
+      }
+
       header {
         display: flex;
         align-items: center;
         gap: 12px;
         padding: 10px 14px;
-        border-bottom: 1px solid var(--line);
+        position: relative;
       }
-      button {
-        background: var(--accent);
-        color: #fff;
-        border: 0;
-        border-radius: 5px;
-        padding: 6px 12px;
-        font: inherit;
-        cursor: pointer;
+      header::after {
+        content: '';
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        bottom: 0;
+        border-bottom: 1.5px solid var(--ink);
+        filter: url(#rough);
       }
-      button:hover { filter: brightness(1.1); }
-      input {
-        background: var(--bg);
-        border: 1px solid var(--line);
-        border-radius: 5px;
-        color: var(--text);
-        padding: 6px 10px;
-        font: inherit;
-        width: 220px;
-      }
-      input:focus, select:focus { outline: 1px solid var(--accent); }
-      select {
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 5px;
-        color: var(--text);
-        padding: 5px 8px;
-        font: inherit;
-        max-width: 160px;
-      }
-      select:disabled { color: var(--dim); }
-      .branches { display: flex; align-items: center; gap: 6px; }
-      .legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 0; list-style: none; }
-      .legend li { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; }
-      .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 
-      .diff-head { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; }
-      .diff-head button { background: transparent; border: 1px solid var(--line); color: var(--dim); padding: 3px 8px; }
-      .diff-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 5px; }
+      button {
+        color: var(--ink);
+        padding: 6px 14px;
+        font: inherit;
+        font-size: 14px;
+        cursor: pointer;
+        background: transparent;
+        border: 0;
+        position: relative;
+      }
+      button::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border: 1.5px solid var(--ink);
+        border-radius: 4px;
+        filter: url(#rough);
+        pointer-events: none;
+      }
+      button:hover { background: rgba(47, 95, 208, 0.09); }
+      button:active { background: rgba(47, 95, 208, 0.18); }
+
+      input, select {
+        color: var(--ink);
+        font: inherit;
+        font-size: 14px;
+        padding: 5px 10px;
+        background: transparent;
+        border: 0;
+        position: relative;
+        appearance: none;
+      }
+      input { width: 200px; }
+      select { max-width: 150px; padding-right: 18px; }
+      input:focus, select:focus { outline: none; background: rgba(47, 95, 208, 0.07); }
+      select:disabled { color: var(--dim); }
+      .field { position: relative; display: inline-flex; }
+      .field::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border: 1.5px solid var(--ink);
+        border-radius: 4px;
+        filter: url(#rough);
+        pointer-events: none;
+      }
+
+      .branches { display: flex; align-items: center; gap: 6px; }
+      #status { color: var(--dim); margin-left: auto; font-size: 13px; }
+
+      main {
+        display: grid;
+        grid-template-columns: 1fr 6px var(--panel-w, 320px);
+        min-height: 0;
+      }
+      /* Opening a diff jumps to a 50/50 default; a drag sets --panel-w inline,
+         which outranks this and then sticks. */
+      main.wide { --panel-w: 50%; }
+
+      #divider { cursor: col-resize; touch-action: none; position: relative; }
+      #divider::before {
+        content: '';
+        position: absolute;
+        top: 6px;
+        bottom: 6px;
+        left: 2px;
+        border-left: 1.5px solid var(--ink);
+        filter: url(#rough);
+      }
+      #divider:hover::before, #divider.dragging::before { border-left-color: var(--accent); }
+
+      /* The graph is a canvas, so the wobble goes on the whole surface. Kept subtle:
+         push the displacement much past 2 and the node labels stop being readable. */
+      #cy { min-height: 0; filter: url(#rough-canvas); }
+
+      #panel { background: var(--panel); padding: 14px 16px; overflow-y: auto; }
+      #panel h2 { font-size: 15px; margin: 0 0 8px; word-break: break-all; }
+      #panel h3 {
+        font-size: 13px;
+        letter-spacing: 0.02em;
+        color: var(--dim);
+        margin: 16px 0 6px;
+      }
+      #panel ul { margin: 0; padding-left: 18px; }
+      #panel li { word-break: break-all; margin-bottom: 2px; }
+      .count { color: var(--ink); }
+      .dim { color: var(--dim); }
+      .error { color: #b3261e; word-break: break-word; }
+
+      .legend { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 12px; padding: 0; list-style: none; }
+      .legend li { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 13px; }
+      .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+      .diff-head { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 6px; flex-wrap: wrap; }
+      .diff-scroll { overflow-x: auto; position: relative; padding: 2px; }
       table.diff {
         border-collapse: collapse;
         width: 100%;
-        font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+        /* Code stays monospace — handwriting fonts destroy column alignment. */
+        font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
         table-layout: fixed;
       }
       table.diff td { padding: 0 6px; vertical-align: top; white-space: pre-wrap; word-break: break-word; }
@@ -80,53 +167,37 @@
         text-align: right;
         color: var(--dim);
         user-select: none;
-        border-right: 1px solid var(--line);
+        border-right: 1px solid var(--rule);
       }
       td.code { width: calc(50% - 40px); }
-      tr.del td.code.left { background: #4a1d1d; }
-      tr.add td.code.right { background: #16341d; }
-      tr.gap td { background: #1f242c; color: var(--dim); font-size: 10px; padding: 2px 6px; }
-      td.blank { background: #191c22; }
-      #status { color: var(--dim); margin-left: auto; font-variant-numeric: tabular-nums; }
-      main {
-        display: grid;
-        grid-template-columns: 1fr 5px var(--panel-w, 320px);
-        min-height: 0;
-      }
-      /* Opening a diff jumps to a 50/50 default; a drag sets --panel-w inline,
-         which outranks this and then sticks. */
-      main.wide { --panel-w: 50%; }
-      #divider {
-        cursor: col-resize;
-        background: var(--line);
-        touch-action: none;
-      }
-      #divider:hover, #divider.dragging { background: var(--accent); }
-      #cy { min-height: 0; }
-      #panel {
-        border-left: 1px solid var(--line);
-        background: var(--panel);
-        padding: 14px;
-        overflow-y: auto;
-      }
-      #panel h2 { font-size: 13px; margin: 0 0 10px; word-break: break-all; }
-      #panel h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--dim); margin: 16px 0 6px; }
-      #panel ul { margin: 0; padding-left: 16px; }
-      #panel li { word-break: break-all; margin-bottom: 2px; }
-      .count { color: var(--text); }
-      .dim { color: var(--dim); }
-      .error { color: #f85149; word-break: break-word; }
+      tr.del td.code.left { background: #fadcd9; }
+      tr.add td.code.right { background: #d9f2de; }
+      tr.gap td { background: #ece7da; color: var(--dim); font-size: 11px; padding: 2px 6px; }
+      td.blank { background: #f0ece1; }
     </style>
   </head>
   <body>
+    <!-- feTurbulence + feDisplacementMap is what gives rough.js its hand-drawn
+         wobble; here it is applied as a filter rather than redrawing geometry. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <filter id="rough">
+        <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="3" result="noise" seed="7" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+      <filter id="rough-canvas">
+        <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" result="noise" seed="3" />
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.6" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </svg>
+
     <header>
       <button id="open-project">Open Project</button>
       <span class="branches">
-        <select id="base" disabled></select>
+        <span class="field"><select id="base" disabled></select></span>
         <span class="dim">…</span>
-        <select id="compare" disabled></select>
+        <span class="field"><select id="compare" disabled></select></span>
       </span>
-      <input id="search" type="search" placeholder="Filter functions…" />
+      <span class="field"><input id="search" type="search" placeholder="Filter files…" /></span>
       <span id="status">Ready</span>
     </header>
     <main>
