@@ -12,7 +12,9 @@ export async function scan(root: string): Promise<ScanResult> {
   try {
     const res = await madge(root, {
       fileExtensions: ['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs'],
-      excludeRegExp: [/node_modules/, /\/dist\//, /\.min\.js$/],
+      // madge yields repo-relative paths ("dist/main.js"), so these must anchor
+      // on start-or-slash — a leading `/` would never match anything.
+      excludeRegExp: [/(^|\/)node_modules\//, /(^|\/)dist\//, /\.min\.js$/],
     });
     const graph = res.obj() as Record<string, string[]>;
     if (Object.keys(graph).length === 0) {
