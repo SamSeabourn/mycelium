@@ -6,7 +6,7 @@ declare global {
   interface Window {
     diffish: {
       pickProject(): Promise<Project>;
-      analyse(opts: { mode: 'diff' | 'repo' | 'functions'; base: string; compare: string }): Promise<Analysis>;
+      analyse(opts: { base: string; compare: string }): Promise<Analysis>;
       fileDiff(opts: { base: string; compare: string; file: string }): Promise<FileDiff>;
       openFile(relative: string): Promise<string>;
     };
@@ -20,7 +20,6 @@ const esc = (s: string) =>
 const openBtn = document.getElementById('open-project') as HTMLButtonElement;
 const baseSel = document.getElementById('base') as HTMLSelectElement;
 const compareSel = document.getElementById('compare') as HTMLSelectElement;
-const modeInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="mode"]')];
 const search = document.getElementById('search') as HTMLInputElement;
 const status = document.getElementById('status') as HTMLElement;
 const panel = document.getElementById('panel') as HTMLElement;
@@ -41,9 +40,7 @@ let hop: Record<string, number> = {};
 let label: Record<string, string> = {};
 let owner: Record<string, string> = {};
 
-const mode = () => (modeInputs.find((i) => i.checked)?.value ?? 'diff') as 'diff' | 'repo' | 'functions';
-
-/** File nodes are their own path; function nodes carry theirs separately. */
+/** Node ids are "file#name"; the owning file is tracked alongside. */
 const fileOf = (id: string) => owner[id] ?? id;
 
 function importersOf(file: string): string[] {
@@ -172,21 +169,20 @@ function showFile(id: string) {
     ? `<p><span class="swatch" style="background:${changed[id] === 'A' ? '#3fb950' : '#d29922'}"></span> ${CHANGE_LABEL[changed[id]]} in this diff</p>`
     : `<p class="dim">unchanged — ${hop[id] ?? 0} hop(s) from a change</p>`;
 
-  const fn = mode() === 'functions';
   const file = fileOf(id);
-  const pretty = (ids: string[]) => ids.map((i) => (fn ? `${label[i] ?? i}  ${owner[i] ?? ''}` : i));
-  const hasDiff = mode() !== 'repo' && changed[id] !== undefined;
+  const pretty = (ids: string[]) => ids.map((i) => `${label[i] ?? i}  ${owner[i] ?? ''}`);
+  const hasDiff = changed[id] !== undefined;
 
   panel.innerHTML = `
     <h2>${esc(label[id] ?? id)}</h2>
-    ${fn ? `<p class="dim">${esc(owner[id] ?? '')}</p>` : ''}
+    <p class="dim">${esc(owner[id] ?? '')}</p>
     ${state}
     <button id="open-file">Open file</button>
     ${hasDiff ? '<button id="hide-diff">Hide diff</button>' : ''}
     ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="dim">${esc(baseSel.value)} … ${esc(compareSel.value)}</span></div>` : ''}
     <div id="diff-body"></div>
-    ${fileList(fn ? 'Calls' : 'Imports', pretty(graph[id] ?? []))}
-    ${fileList(fn ? 'Called by' : 'Imported by', pretty(importersOf(id)))}
+    ${fileList('Calls', pretty(graph[id] ?? []))}
+    ${fileList('Called by', pretty(importersOf(id)))}
   `;
 
   document.getElementById('open-file')?.addEventListener('click', async () => {
@@ -217,20 +213,17 @@ function summary(missing: string[]): string {
     return acc;
   }, {});
 
-  const legend =
-    mode() === 'repo'
-      ? ''
-      : `<ul class="legend">
-          <li><span class="swatch" style="background:#3fb950"></span>added ${counts.A ?? 0}</li>
-          <li><span class="swatch" style="background:#d29922"></span>modified ${(counts.M ?? 0) + (counts.R ?? 0)}</li>
-          <li><span class="swatch" style="background:#5b8def;opacity:.55"></span>related</li>
-        </ul>`;
+  const legend = `<ul class="legend">
+      <li><span class="swatch" style="background:#3fb950"></span>added ${counts.A ?? 0}</li>
+      <li><span class="swatch" style="background:#d29922"></span>modified ${(counts.M ?? 0) + (counts.R ?? 0)}</li>
+      <li><span class="swatch" style="background:#5b8def;opacity:.55"></span>related</li>
+    </ul>`;
 
   const deleted =
     missing.length > 0
-      ? `<h3>Deleted <span class="count">${missing.length}</span></h3>
-         <p class="dim">Not on the compare branch, so not drawn.</p>
-         <ul>${missing.map((f) => `<li>${f}</li>`).join('')}</ul>`
+      ? `<h3>Deleted files <span class="count">${missing.length}</span></h3>
+         <p class="dim">Not on the compare branch, so no functions to draw.</p>
+         <ul>${missing.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
       : '';
 
   return `${legend}<p class="dim">Click a node for details.</p>${deleted}`;
@@ -311,30 +304,25 @@ function render(result: Extract<Analysis, { ok: true }>) {
   cy.on('tap', 'node', (evt) => showFile(evt.target.id()));
 
   const changedCount = Object.keys(changed).length;
-  const unit = mode() === 'functions' ? 'functions' : 'files';
-  const link = mode() === 'functions' ? 'calls' : 'imports';
-  status.textContent =
-    mode() === 'repo'
-      ? `Repo — ${nodeCount} files, ${edgeCount} imports`
-      : `${changedCount} changed, ${nodeCount - changedCount} related ${unit} — ${edgeCount} ${link}`;
+  status.textContent = `${changedCount} changed, ${nodeCount - changedCount} related functions — ${edgeCount} calls`;
 
   panel.innerHTML = summary(result.missing);
   search.value = '';
 }
 
 async function analyse() {
-  if (mode() === 'diff' && (!baseSel.value || !compareSel.value)) return;
+  // No branches means no repo — running git anyway is what dumped its usage screen.
+  if (!baseSel.value || !compareSel.value) return;
 
   status.textContent = 'Analysing…';
   const result = await window.diffish.analyse({
-    mode: mode(),
     base: baseSel.value,
     compare: compareSel.value,
   });
 
   if (!result.ok) {
     status.textContent = 'Nothing to show';
-    panel.innerHTML = `<p class="error">${result.error}</p>`;
+    panel.innerHTML = `<p class="error">${esc(result.error)}</p>`;
     cy?.destroy();
     cy = null;
     graph = {};
@@ -345,7 +333,9 @@ async function analyse() {
 
 function fillBranches(all: string[], base: string, current: string) {
   const options = (selected: string) =>
-    all.map((b) => `<option value="${b}"${b === selected ? ' selected' : ''}>${b}</option>`).join('');
+    all
+      .map((b) => `<option value="${esc(b)}"${b === selected ? ' selected' : ''}>${esc(b)}</option>`)
+      .join('');
 
   baseSel.innerHTML = options(base);
   compareSel.innerHTML = options(current);
@@ -360,16 +350,19 @@ openBtn.addEventListener('click', async () => {
   fillBranches(project.branches, project.base, project.current);
 
   if ('error' in project) {
-    // Not a git repo: Diff mode has nothing to work with, but Repo mode does.
-    modeInputs.find((i) => i.value === 'repo')!.checked = true;
-    panel.innerHTML = `<p class="error">${project.error}</p><p class="dim">Showing the whole repo instead.</p>`;
+    // Nothing to diff without git, so stop here rather than run git on a non-repo.
+    status.textContent = 'Nothing to show';
+    panel.innerHTML = `<p class="error">${esc(project.error)}</p><p class="dim">diffish compares two branches, so it needs a git repository.</p>`;
+    cy?.destroy();
+    cy = null;
+    graph = {};
+    return;
   }
 
   status.textContent = project.root;
   await analyse();
 });
 
-for (const input of modeInputs) input.addEventListener('change', analyse);
 baseSel.addEventListener('change', analyse);
 compareSel.addEventListener('change', analyse);
 

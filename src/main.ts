@@ -11,12 +11,10 @@ import {
   type ChangeStatus,
   type DiffRow,
 } from './git';
-import { restrict, withinHops } from './subgraph';
+import { withinHops } from './subgraph';
 import { buildFunctionGraph, markChangedFunctions, parseFile, type FnDef } from './functions';
 
 const HOPS = 2;
-
-export type Mode = 'diff' | 'repo' | 'functions';
 
 export type Project =
   | { ok: true; root: string; branches: string[]; current: string; base: string }
@@ -30,7 +28,7 @@ export type Analysis =
       changed: Record<string, ChangeStatus>;
       hop: Record<string, number>;
       missing: string[];
-      /** function mode only: node id -> display name, and node id -> owning file */
+      /** node id -> display name, and node id -> owning file */
       label: Record<string, string>;
       file: Record<string, string>;
     }
@@ -66,7 +64,6 @@ ipcMain.handle('pick-project', async (): Promise<Project> => {
   projectRoot = picked.filePaths[0];
   const found = await branches(projectRoot);
 
-  // A non-git folder is still worth opening — Repo mode does not need git.
   if (!found.ok) {
     currentBranch = '';
     return { ok: true, root: projectRoot, branches: [], current: '', base: '', error: found.error };
@@ -84,14 +81,9 @@ ipcMain.handle('pick-project', async (): Promise<Project> => {
 
 ipcMain.handle(
   'analyse',
-  async (_event, opts: { mode: Mode; base: string; compare: string }): Promise<Analysis> => {
+  async (_event, opts: { base: string; compare: string }): Promise<Analysis> => {
     if (!projectRoot) return { ok: false, error: 'No project open' };
-
-    if (opts.mode === 'repo') {
-      const result = await scan(projectRoot);
-      if (!result.ok) return result;
-      return { ok: true, graph: result.graph, changed: {}, hop: {}, missing: [], label: {}, file: {} };
-    }
+    if (!opts.base || !opts.compare) return { ok: false, error: 'Pick a base and a compare branch' };
 
     const diff = await changedFiles(projectRoot, opts.base, opts.compare);
     if (!diff.ok) return diff;
@@ -101,9 +93,8 @@ ipcMain.handle(
       return { ok: false, error: `No changes between ${opts.base} and ${opts.compare}` };
     }
 
-    const lines =
-      opts.mode === 'functions' ? await changedLines(projectRoot, opts.base, opts.compare) : null;
-    if (lines && !lines.ok) return lines;
+    const lines = await changedLines(projectRoot, opts.base, opts.compare);
+    if (!lines.ok) return lines;
 
     // Everything that needs the compare branch on disk happens in here, so the
     // throwaway worktree is still around when the function parser reads files.
@@ -124,19 +115,6 @@ ipcMain.handle(
 
       const { files, distance } = withinHops(scanned.graph, seeds, HOPS);
 
-      if (opts.mode === 'diff') {
-        return {
-          ok: true,
-          graph: restrict(scanned.graph, files),
-          changed,
-          hop: Object.fromEntries(distance),
-          missing,
-          label: {},
-          file: {},
-        };
-      }
-
-      const inScope = [...files];
       const read = (f: string): string | null => {
         try {
           return fs.readFileSync(path.join(dir, f), 'utf8');
@@ -145,7 +123,7 @@ ipcMain.handle(
         }
       };
 
-      const fns = buildFunctionGraph(inScope, scanned.graph, read);
+      const fns = buildFunctionGraph([...files], scanned.graph, read);
 
       // Re-parse only the changed files to get spans, then intersect with the diff
       // hunks — otherwise every function in a touched file would look changed.
@@ -154,7 +132,7 @@ ipcMain.handle(
         const code = read(f);
         if (code !== null) defs.push(...parseFile(f, code).defs);
       }
-      const touched = new Set(markChangedFunctions(defs, lines?.ok ? lines.lines : {}));
+      const touched = new Set(markChangedFunctions(defs, lines.lines));
 
       const fnChanged: Record<string, ChangeStatus> = {};
       const fnHop: Record<string, number> = {};

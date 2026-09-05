@@ -19,7 +19,11 @@ async function git(root: string, args: string[]): Promise<string> {
 
 function message(e: unknown): string {
   const err = e as { stderr?: string; message?: string };
-  return (err.stderr || err.message || String(e)).trim();
+  const text = (err.stderr || err.message || String(e)).trim();
+  // git prints its whole usage screen on a malformed invocation. The first line is
+  // the actual complaint; the rest is a manual nobody wants pasted into a panel.
+  const first = text.split('\n')[0].trim();
+  return first.length > 200 ? `${first.slice(0, 200)}…` : first;
 }
 
 /**

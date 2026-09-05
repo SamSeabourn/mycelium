@@ -60,9 +60,7 @@
         max-width: 160px;
       }
       select:disabled { color: var(--dim); }
-      .mode, .branches { display: flex; align-items: center; gap: 6px; }
-      .mode label { display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--dim); }
-      .mode input { width: auto; accent-color: var(--accent); }
+      .branches { display: flex; align-items: center; gap: 6px; }
       .legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 0; list-style: none; }
       .legend li { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; }
       .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
@@ -123,17 +121,12 @@
   <body>
     <header>
       <button id="open-project">Open Project</button>
-      <span class="mode">
-        <label><input type="radio" name="mode" value="diff" checked /> Files</label>
-        <label><input type="radio" name="mode" value="functions" /> Functions</label>
-        <label><input type="radio" name="mode" value="repo" /> Repo</label>
-      </span>
       <span class="branches">
         <select id="base" disabled></select>
         <span class="dim">…</span>
         <select id="compare" disabled></select>
       </span>
-      <input id="search" type="search" placeholder="Filter files…" />
+      <input id="search" type="search" placeholder="Filter functions…" />
       <span id="status">Ready</span>
     </header>
     <main>

@@ -48,16 +48,6 @@ export function withinHops(
   return { files: new Set(distance.keys()), distance };
 }
 
-/** Keep only the edges whose endpoints both survived the hop filter. */
-export function restrict(
-  graph: Record<string, string[]>,
-  keep: Set<string>,
-): Record<string, string[]> {
-  const out: Record<string, string[]> = {};
-  for (const file of keep) {
-    out[file] = (graph[file] ?? []).filter((dep) => keep.has(dep));
-  }
-  return out;
-}
+// touched on demo-branch
 
 // touched on demo-branch
