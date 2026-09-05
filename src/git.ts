@@ -92,6 +92,91 @@ export async function changedLines(
   }
 }
 
+export type DiffRow =
+  | { kind: 'gap'; text: string }
+  | { kind: 'context'; leftNo: number; rightNo: number; text: string }
+  | { kind: 'change'; leftNo: number | null; left: string | null; rightNo: number | null; right: string | null };
+
+/**
+ * Convert git's unified diff into side-by-side rows.
+ *
+ * git already ran the diff algorithm, so this only has to pair the runs up:
+ * consecutive removals line up against consecutive additions, and whichever run is
+ * longer leaves blanks on the other side. Pure, so it is testable without a repo.
+ */
+export function parseUnified(stdout: string): DiffRow[] {
+  const rows: DiffRow[] = [];
+  let oldNo = 0;
+  let newNo = 0;
+  let inHunk = false;
+  let dels: { no: number; text: string }[] = [];
+  let adds: { no: number; text: string }[] = [];
+
+  const flush = () => {
+    for (let i = 0; i < Math.max(dels.length, adds.length); i++) {
+      const d = dels[i];
+      const a = adds[i];
+      rows.push({
+        kind: 'change',
+        leftNo: d ? d.no : null,
+        left: d ? d.text : null,
+        rightNo: a ? a.no : null,
+        right: a ? a.text : null,
+      });
+    }
+    dels = [];
+    adds = [];
+  };
+
+  for (const line of stdout.split('\n')) {
+    if (line.startsWith('@@')) {
+      flush();
+      const m = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/.exec(line);
+      if (!m) continue;
+      oldNo = Number(m[1]);
+      newNo = Number(m[2]);
+      inHunk = true;
+      rows.push({ kind: 'gap', text: m[3].trim() });
+      continue;
+    }
+
+    // Everything before the first @@ is header noise — and "--- a/x" / "+++ b/x"
+    // would otherwise be mistaken for content.
+    if (!inHunk) continue;
+    if (line.startsWith('\\')) continue; // "\ No newline at end of file"
+    if (line === '') continue; // trailing artefact of the split; real blanks are " "
+
+    if (line.startsWith('-')) {
+      dels.push({ no: oldNo++, text: line.slice(1) });
+      continue;
+    }
+    if (line.startsWith('+')) {
+      adds.push({ no: newNo++, text: line.slice(1) });
+      continue;
+    }
+
+    flush();
+    rows.push({ kind: 'context', leftNo: oldNo++, rightNo: newNo++, text: line.slice(1) });
+  }
+
+  flush();
+  return rows;
+}
+
+export async function fileDiff(
+  root: string,
+  base: string,
+  compare: string,
+  file: string,
+): Promise<GitResult<{ rows: DiffRow[] }>> {
+  try {
+    const stdout = await git(root, ['diff', '--no-color', `${base}...${compare}`, '--', file]);
+    return { ok: true, rows: parseUnified(stdout) };
+  } catch (e) {
+    return { ok: false, error: message(e) };
+  }
+}
+
 export async function branches(root: string): Promise<GitResult<{ all: string[]; current: string }>> {
   try {
     const all = (await git(root, ['branch', '--format=%(refname:short)']))

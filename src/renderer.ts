@@ -1,5 +1,5 @@
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
-import type { Analysis, Project } from './main';
+import type { Analysis, FileDiff, Project } from './main';
 import type { ChangeStatus } from './git';
 
 declare global {
@@ -7,10 +7,15 @@ declare global {
     diffish: {
       pickProject(): Promise<Project>;
       analyse(opts: { mode: 'diff' | 'repo' | 'functions'; base: string; compare: string }): Promise<Analysis>;
+      fileDiff(opts: { base: string; compare: string; file: string }): Promise<FileDiff>;
       openFile(relative: string): Promise<string>;
     };
   }
 }
+
+/** Everything below builds HTML by hand, so nothing reaches innerHTML unescaped. */
+const esc = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 const openBtn = document.getElementById('open-project') as HTMLButtonElement;
 const baseSel = document.getElementById('base') as HTMLSelectElement;
@@ -20,6 +25,7 @@ const search = document.getElementById('search') as HTMLInputElement;
 const status = document.getElementById('status') as HTMLElement;
 const panel = document.getElementById('panel') as HTMLElement;
 const cyEl = document.getElementById('cy') as HTMLElement;
+const mainEl = document.querySelector('main') as HTMLElement;
 
 const CHANGE_LABEL: Record<ChangeStatus, string> = {
   A: 'added',
@@ -71,8 +77,60 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
 
 function fileList(title: string, files: string[]): string {
   if (files.length === 0) return `<h3>${title} <span class="count">0</span></h3><p class="dim">none</p>`;
-  const items = files.map((f) => `<li>${f}</li>`).join('');
+  const items = files.map((f) => `<li>${esc(f)}</li>`).join('');
   return `<h3>${title} <span class="count">${files.length}</span></h3><ul>${items}</ul>`;
+}
+
+let diffOpen = false;
+
+function setWide(on: boolean) {
+  diffOpen = on;
+  mainEl.classList.toggle('wide', on);
+  // The container just changed width; cytoscape only notices if told.
+  setTimeout(() => cy?.resize(), 160);
+}
+
+function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
+  const cell = (no: number | null, text: string | null, side: 'left' | 'right') =>
+    text === null
+      ? `<td class="no"></td><td class="code ${side} blank"></td>`
+      : `<td class="no">${no ?? ''}</td><td class="code ${side}">${esc(text)}</td>`;
+
+  const body = rows
+    .map((row) => {
+      if (row.kind === 'gap') {
+        return `<tr class="gap"><td colspan="4">${esc(row.text) || '…'}</td></tr>`;
+      }
+      if (row.kind === 'context') {
+        return `<tr>${cell(row.leftNo, row.text, 'left')}${cell(row.rightNo, row.text, 'right')}</tr>`;
+      }
+      const cls = [row.left !== null ? 'del' : '', row.right !== null ? 'add' : ''].join(' ').trim();
+      return `<tr class="${cls}">${cell(row.leftNo, row.left, 'left')}${cell(row.rightNo, row.right, 'right')}</tr>`;
+    })
+    .join('');
+
+  return `<div class="diff-scroll"><table class="diff">${body}</table></div>`;
+}
+
+async function showDiff(file: string) {
+  const host = document.getElementById('diff-body');
+  if (!host) return;
+
+  host.innerHTML = '<p class="dim">Loading…</p>';
+  const result = await window.diffish.fileDiff({
+    base: baseSel.value,
+    compare: compareSel.value,
+    file,
+  });
+
+  if (!result.ok) {
+    host.innerHTML = `<p class="error">${esc(result.error)}</p>`;
+    return;
+  }
+  host.innerHTML =
+    result.rows.length === 0
+      ? '<p class="dim">No changes in this file between the selected branches.</p>'
+      : diffTable(result.rows);
 }
 
 function showFile(id: string) {
@@ -81,20 +139,42 @@ function showFile(id: string) {
     : `<p class="dim">unchanged — ${hop[id] ?? 0} hop(s) from a change</p>`;
 
   const fn = mode() === 'functions';
+  const file = fileOf(id);
   const pretty = (ids: string[]) => ids.map((i) => (fn ? `${label[i] ?? i}  ${owner[i] ?? ''}` : i));
+  const hasDiff = mode() !== 'repo' && changed[id] !== undefined;
 
   panel.innerHTML = `
-    <h2>${label[id] ?? id}</h2>
-    ${fn ? `<p class="dim">${owner[id] ?? ''}</p>` : ''}
+    <h2>${esc(label[id] ?? id)}</h2>
+    ${fn ? `<p class="dim">${esc(owner[id] ?? '')}</p>` : ''}
     ${state}
     <button id="open-file">Open file</button>
+    ${hasDiff ? '<button id="hide-diff">Hide diff</button>' : ''}
+    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="dim">${esc(baseSel.value)} … ${esc(compareSel.value)}</span></div>` : ''}
+    <div id="diff-body"></div>
     ${fileList(fn ? 'Calls' : 'Imports', pretty(graph[id] ?? []))}
     ${fileList(fn ? 'Called by' : 'Imported by', pretty(importersOf(id)))}
   `;
+
   document.getElementById('open-file')?.addEventListener('click', async () => {
-    const err = await window.diffish.openFile(fileOf(id));
-    if (err) panel.insertAdjacentHTML('afterbegin', `<p class="error">${err}</p>`);
+    const err = await window.diffish.openFile(file);
+    if (err) panel.insertAdjacentHTML('afterbegin', `<p class="error">${esc(err)}</p>`);
   });
+
+  document.getElementById('hide-diff')?.addEventListener('click', () => {
+    setWide(false);
+    document.getElementById('diff-body')!.innerHTML = '';
+    document.querySelector('.diff-head')?.remove();
+    (document.getElementById('hide-diff') as HTMLButtonElement).remove();
+  });
+
+  // Clicking a changed node in the graph is the whole gesture — the diff opens
+  // with it. Unchanged neighbours have nothing to show, so the panel stays narrow.
+  if (hasDiff) {
+    setWide(true);
+    void showDiff(file);
+  } else if (diffOpen) {
+    setWide(false);
+  }
 }
 
 function summary(missing: string[]): string {

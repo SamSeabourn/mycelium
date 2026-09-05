@@ -2,7 +2,15 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { scan } from './scan';
-import { branches, changedFiles, changedLines, withBranchCheckout, type ChangeStatus } from './git';
+import {
+  branches,
+  changedFiles,
+  changedLines,
+  fileDiff,
+  withBranchCheckout,
+  type ChangeStatus,
+  type DiffRow,
+} from './git';
 import { restrict, withinHops } from './subgraph';
 import { buildFunctionGraph, markChangedFunctions, parseFile, type FnDef } from './functions';
 
@@ -168,6 +176,16 @@ ipcMain.handle(
     return opts.compare === currentBranch
       ? work(projectRoot)
       : withBranchCheckout(projectRoot, opts.compare, work);
+  },
+);
+
+export type FileDiff = { ok: true; rows: DiffRow[] } | { ok: false; error: string };
+
+ipcMain.handle(
+  'file-diff',
+  async (_event, opts: { base: string; compare: string; file: string }): Promise<FileDiff> => {
+    if (!projectRoot) return { ok: false, error: 'No project open' };
+    return fileDiff(projectRoot, opts.base, opts.compare, opts.file);
   },
 );
 

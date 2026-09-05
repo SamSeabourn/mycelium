@@ -66,8 +66,38 @@
       .legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 0; list-style: none; }
       .legend li { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; }
       .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+      .diff-head { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; }
+      .diff-head button { background: transparent; border: 1px solid var(--line); color: var(--dim); padding: 3px 8px; }
+      .diff-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 5px; }
+      table.diff {
+        border-collapse: collapse;
+        width: 100%;
+        font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+        table-layout: fixed;
+      }
+      table.diff td { padding: 0 6px; vertical-align: top; white-space: pre-wrap; word-break: break-word; }
+      td.no {
+        width: 40px;
+        text-align: right;
+        color: var(--dim);
+        user-select: none;
+        border-right: 1px solid var(--line);
+      }
+      td.code { width: calc(50% - 40px); }
+      tr.del td.code.left { background: #4a1d1d; }
+      tr.add td.code.right { background: #16341d; }
+      tr.gap td { background: #1f242c; color: var(--dim); font-size: 10px; padding: 2px 6px; }
+      td.blank { background: #191c22; }
       #status { color: var(--dim); margin-left: auto; font-variant-numeric: tabular-nums; }
-      main { display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
+      main {
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        min-height: 0;
+        transition: grid-template-columns 0.15s ease;
+      }
+      /* The diff needs two code columns; 320px cannot hold them. */
+      main.wide { grid-template-columns: 1fr 55%; }
       #cy { min-height: 0; }
       #panel {
         border-left: 1px solid var(--line);
