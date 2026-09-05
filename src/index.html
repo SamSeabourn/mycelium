@@ -113,7 +113,12 @@
         display: grid;
         grid-template-columns: 1fr 6px var(--panel-w, 320px);
         min-height: 0;
+        overflow: hidden;
       }
+      /* Grid items default to min-width:auto, so a column refuses to shrink below
+         its content. The diff table is wide, so without this the panel overrides
+         --panel-w, the row grows past the viewport, and content is pushed off-page. */
+      main > * { min-width: 0; }
       /* Opening a diff jumps to a 50/50 default; a drag sets --panel-w inline,
          which outranks this and then sticks. */
       main.wide { --panel-w: 50%; }
@@ -136,9 +141,12 @@
 
       /* The graph is a canvas, so the wobble goes on the whole surface. Kept subtle:
          push the displacement much past 2 and the node labels stop being readable. */
-      #cy { min-height: 0; filter: url(#rough-canvas); }
+      /* Cytoscape sizes its canvases in explicit pixels and only updates them when
+         resize() lands, so mid-drag the canvas is briefly wider than its column.
+         Clipping keeps that from spilling over the divider and the panel. */
+      #cy { min-height: 0; overflow: hidden; filter: url(#rough-canvas); }
 
-      #panel { background: var(--panel); padding: 14px 16px; overflow-y: auto; }
+      #panel { background: var(--panel); padding: 14px 16px; overflow: hidden auto; }
       #panel h2 { font-size: 15px; margin: 0 0 8px; word-break: break-all; }
       #panel h3 {
         font-size: 13px;
@@ -157,7 +165,7 @@
       .swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 
       .diff-head { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 6px; flex-wrap: wrap; }
-      .diff-scroll { overflow-x: auto; position: relative; padding: 2px; }
+      .diff-scroll { overflow-x: auto; position: relative; padding: 2px; max-width: 100%; }
       table.diff {
         border-collapse: collapse;
         width: 100%;
