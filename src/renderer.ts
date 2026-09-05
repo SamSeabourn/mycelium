@@ -6,7 +6,7 @@ declare global {
   interface Window {
     diffish: {
       pickProject(): Promise<Project>;
-      analyse(opts: { mode: 'diff' | 'repo'; base: string; compare: string }): Promise<Analysis>;
+      analyse(opts: { mode: 'diff' | 'repo' | 'functions'; base: string; compare: string }): Promise<Analysis>;
       openFile(relative: string): Promise<string>;
     };
   }
@@ -32,8 +32,13 @@ let cy: Core | null = null;
 let graph: Record<string, string[]> = {};
 let changed: Record<string, ChangeStatus> = {};
 let hop: Record<string, number> = {};
+let label: Record<string, string> = {};
+let owner: Record<string, string> = {};
 
-const mode = () => (modeInputs.find((i) => i.checked)?.value ?? 'diff') as 'diff' | 'repo';
+const mode = () => (modeInputs.find((i) => i.checked)?.value ?? 'diff') as 'diff' | 'repo' | 'functions';
+
+/** File nodes are their own path; function nodes carry theirs separately. */
+const fileOf = (id: string) => owner[id] ?? id;
 
 function importersOf(file: string): string[] {
   return Object.keys(graph).filter((k) => graph[k].includes(file));
@@ -51,7 +56,7 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
   const nodes: ElementDefinition[] = [...ids].map((id) => ({
     data: {
       id,
-      label: id.split('/').pop() ?? id,
+      label: label[id] ?? id.split('/').pop() ?? id,
       change: changed[id] ?? '',
       hop: String(hop[id] ?? 0),
     },
@@ -75,15 +80,19 @@ function showFile(id: string) {
     ? `<p><span class="swatch" style="background:${changed[id] === 'A' ? '#3fb950' : '#d29922'}"></span> ${CHANGE_LABEL[changed[id]]} in this diff</p>`
     : `<p class="dim">unchanged — ${hop[id] ?? 0} hop(s) from a change</p>`;
 
+  const fn = mode() === 'functions';
+  const pretty = (ids: string[]) => ids.map((i) => (fn ? `${label[i] ?? i}  ${owner[i] ?? ''}` : i));
+
   panel.innerHTML = `
-    <h2>${id}</h2>
+    <h2>${label[id] ?? id}</h2>
+    ${fn ? `<p class="dim">${owner[id] ?? ''}</p>` : ''}
     ${state}
     <button id="open-file">Open file</button>
-    ${fileList('Imports', graph[id] ?? [])}
-    ${fileList('Imported by', importersOf(id))}
+    ${fileList(fn ? 'Calls' : 'Imports', pretty(graph[id] ?? []))}
+    ${fileList(fn ? 'Called by' : 'Imported by', pretty(importersOf(id)))}
   `;
   document.getElementById('open-file')?.addEventListener('click', async () => {
-    const err = await window.diffish.openFile(id);
+    const err = await window.diffish.openFile(fileOf(id));
     if (err) panel.insertAdjacentHTML('afterbegin', `<p class="error">${err}</p>`);
   });
 }
@@ -113,10 +122,32 @@ function summary(missing: string[]): string {
   return `${legend}<p class="dim">Click a node for details.</p>${deleted}`;
 }
 
+/**
+ * Layered top-down from whatever changed, so the graph reads as a cascade.
+ * With no roots (Repo mode) there is nothing to layer from, so fall back to force.
+ */
+function layoutFor(roots: string[]): cytoscape.LayoutOptions {
+  if (roots.length === 0) {
+    // tradeoff: cose gets slow and hairy past ~2000 nodes.
+    // Upgrade path: collapse by folder, then cytoscape-fcose if still needed.
+    return { name: 'cose', animate: false, nodeRepulsion: 8000, idealEdgeLength: 60 } as cytoscape.LayoutOptions;
+  }
+  return {
+    name: 'breadthfirst',
+    animate: false,
+    directed: false,
+    roots: roots.map((r) => `#${CSS.escape(r)}`).join(', '),
+    spacingFactor: 1.1,
+    padding: 30,
+  } as cytoscape.LayoutOptions;
+}
+
 function render(result: Extract<Analysis, { ok: true }>) {
   graph = result.graph;
   changed = result.changed;
   hop = result.hop;
+  label = result.label;
+  owner = result.file;
 
   const elements = toElements(graph);
   const edgeCount = elements.filter((e) => 'source' in e.data).length;
@@ -160,18 +191,18 @@ function render(result: Extract<Analysis, { ok: true }>) {
       { selector: 'node:selected', style: { 'background-color': '#f0883e', width: 20, height: 20, opacity: 1 } },
       { selector: '.dimmed', style: { opacity: 0.08 } },
     ],
-    // tradeoff: cose gets slow and hairy past ~2000 nodes.
-    // Upgrade path: collapse by folder, then cytoscape-fcose if still needed.
-    layout: { name: 'cose', animate: false, nodeRepulsion: 8000, idealEdgeLength: 60 },
+    layout: layoutFor(Object.keys(changed)),
   });
 
   cy.on('tap', 'node', (evt) => showFile(evt.target.id()));
 
   const changedCount = Object.keys(changed).length;
+  const unit = mode() === 'functions' ? 'functions' : 'files';
+  const link = mode() === 'functions' ? 'calls' : 'imports';
   status.textContent =
     mode() === 'repo'
       ? `Repo — ${nodeCount} files, ${edgeCount} imports`
-      : `${changedCount} changed, ${nodeCount - Object.keys(changed).length} related — ${edgeCount} imports`;
+      : `${changedCount} changed, ${nodeCount - changedCount} related ${unit} — ${edgeCount} ${link}`;
 
   panel.innerHTML = summary(result.missing);
   search.value = '';
