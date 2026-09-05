@@ -88,27 +88,48 @@ const divider = document.getElementById('divider') as HTMLElement;
 const MIN_PANEL = 240;
 const MIN_GRAPH = 200;
 
+let resizeQueued = false;
+
 divider.addEventListener('pointerdown', (e) => {
   divider.setPointerCapture(e.pointerId);
   divider.classList.add('dragging');
+  // Suppresses text selection across the panel and pins the cursor for the drag.
+  document.body.classList.add('resizing');
   e.preventDefault();
 });
 
 divider.addEventListener('pointermove', (e) => {
   if (!divider.hasPointerCapture(e.pointerId)) return;
+
+  // The divider is 6px wide and sits left of the panel, so the panel's width is
+  // measured from the divider's centre — without this the bar drifts off the cursor.
   const width = Math.min(
-    Math.max(window.innerWidth - e.clientX, MIN_PANEL),
+    Math.max(window.innerWidth - e.clientX - divider.offsetWidth / 2, MIN_PANEL),
     window.innerWidth - MIN_GRAPH,
   );
   mainEl.style.setProperty('--panel-w', `${width}px`);
-  cy?.resize();
+
+  // Pointer events outrun frames. Coalescing to one resize per frame keeps a fast
+  // drag smooth — cytoscape re-renders the whole canvas on every resize() call.
+  if (resizeQueued) return;
+  resizeQueued = true;
+  requestAnimationFrame(() => {
+    resizeQueued = false;
+    cy?.resize();
+  });
 });
 
-divider.addEventListener('pointerup', (e) => {
+const endDrag = (e: PointerEvent) => {
+  if (!divider.hasPointerCapture(e.pointerId)) return;
   divider.releasePointerCapture(e.pointerId);
   divider.classList.remove('dragging');
+  document.body.classList.remove('resizing');
   cy?.resize();
-});
+};
+
+divider.addEventListener('pointerup', endDrag);
+// Without this a cancelled gesture leaves the cursor pinned and text unselectable.
+divider.addEventListener('pointercancel', endDrag);
 
 // Double-click restores the automatic width for the current view.
 divider.addEventListener('dblclick', () => {

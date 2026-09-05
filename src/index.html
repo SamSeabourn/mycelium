@@ -129,6 +129,10 @@
         filter: url(#rough);
       }
       #divider:hover::before, #divider.dragging::before { border-left-color: var(--accent); }
+      body.resizing { cursor: col-resize; user-select: none; }
+      /* Re-filtering the canvas every frame makes the drag stutter; the graph is
+         moving too fast to see the wobble anyway. It comes back on release. */
+      body.resizing #cy { filter: none; }
 
       /* The graph is a canvas, so the wobble goes on the whole surface. Kept subtle:
          push the displacement much past 2 and the node labels stop being readable. */
