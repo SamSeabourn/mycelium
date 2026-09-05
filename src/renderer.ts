@@ -87,8 +87,42 @@ function setWide(on: boolean) {
   diffOpen = on;
   mainEl.classList.toggle('wide', on);
   // The container just changed width; cytoscape only notices if told.
-  setTimeout(() => cy?.resize(), 160);
+  cy?.resize();
 }
+
+// Drag the divider to size the panel. Pointer capture keeps the events coming even
+// when the cursor outruns the 5px strip.
+const divider = document.getElementById('divider') as HTMLElement;
+const MIN_PANEL = 240;
+const MIN_GRAPH = 200;
+
+divider.addEventListener('pointerdown', (e) => {
+  divider.setPointerCapture(e.pointerId);
+  divider.classList.add('dragging');
+  e.preventDefault();
+});
+
+divider.addEventListener('pointermove', (e) => {
+  if (!divider.hasPointerCapture(e.pointerId)) return;
+  const width = Math.min(
+    Math.max(window.innerWidth - e.clientX, MIN_PANEL),
+    window.innerWidth - MIN_GRAPH,
+  );
+  mainEl.style.setProperty('--panel-w', `${width}px`);
+  cy?.resize();
+});
+
+divider.addEventListener('pointerup', (e) => {
+  divider.releasePointerCapture(e.pointerId);
+  divider.classList.remove('dragging');
+  cy?.resize();
+});
+
+// Double-click restores the automatic width for the current view.
+divider.addEventListener('dblclick', () => {
+  mainEl.style.removeProperty('--panel-w');
+  cy?.resize();
+});
 
 function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
   const cell = (no: number | null, text: string | null, side: 'left' | 'right') =>

@@ -92,12 +92,18 @@
       #status { color: var(--dim); margin-left: auto; font-variant-numeric: tabular-nums; }
       main {
         display: grid;
-        grid-template-columns: 1fr 320px;
+        grid-template-columns: 1fr 5px var(--panel-w, 320px);
         min-height: 0;
-        transition: grid-template-columns 0.15s ease;
       }
-      /* The diff needs two code columns; 320px cannot hold them. */
-      main.wide { grid-template-columns: 1fr 1fr; }
+      /* Opening a diff jumps to a 50/50 default; a drag sets --panel-w inline,
+         which outranks this and then sticks. */
+      main.wide { --panel-w: 50%; }
+      #divider {
+        cursor: col-resize;
+        background: var(--line);
+        touch-action: none;
+      }
+      #divider:hover, #divider.dragging { background: var(--accent); }
       #cy { min-height: 0; }
       #panel {
         border-left: 1px solid var(--line);
@@ -132,6 +138,7 @@
     </header>
     <main>
       <div id="cy"></div>
+      <div id="divider" title="Drag to resize"></div>
       <aside id="panel"><p class="dim">Open a project to begin.</p></aside>
     </main>
     <script src="renderer.js"></script>
