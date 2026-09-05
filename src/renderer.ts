@@ -184,7 +184,9 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
   const body = rows
     .map((row) => {
       if (row.kind === 'gap') {
-        return `<tr class="gap"><td colspan="4">${esc(row.text) || '…'}</td></tr>`;
+        // An empty gutter cell first, so the enclosing-declaration text git puts in
+        // the @@ header lines up with the code rather than starting in the numbers.
+        return `<tr class="gap"><td class="no"></td><td colspan="3">${esc(row.text) || '…'}</td></tr>`;
       }
       if (row.kind === 'context') {
         return `<tr>${cell(row.leftNo, row.text, 'left')}${cell(row.rightNo, row.text, 'right')}</tr>`;
