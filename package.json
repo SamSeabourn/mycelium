@@ -6,13 +6,12 @@
   "main": "dist/main.js",
   "scripts": {
     "esbuild": "node_modules/esbuild/bin/esbuild",
-    "build": "pnpm esbuild src/main.ts src/preload.ts src/scan.ts src/git.ts src/subgraph.ts src/functions.ts --bundle --platform=node --packages=external --outdir=dist && pnpm esbuild src/renderer.ts --bundle --outfile=dist/renderer.js && cp src/index.html dist/",
+    "build": "pnpm esbuild src/main.ts src/preload.ts src/scan.ts src/git.ts src/subgraph.ts --bundle --platform=node --packages=external --outdir=dist && pnpm esbuild src/renderer.ts --bundle --outfile=dist/renderer.js && cp src/index.html dist/",
     "start": "pnpm build && electron .",
     "check": "tsc --noEmit",
     "test": "pnpm build && node --test test/*.test.js"
   },
   "dependencies": {
-    "@babel/parser": "7.29.8",
     "cytoscape": "3.34.2",
     "madge": "8.0.0"
   },

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { withinHops } = require('../dist/subgraph.js');
+const { withinHops, restrict } = require('../dist/subgraph.js');
 
 // a -> b -> c -> d -> e
 const chain = {
@@ -41,4 +41,13 @@ test('withinHops tolerates a seed missing from the graph', () => {
   const { files } = withinHops(chain, ['gone.js'], 2);
 
   assert.deepEqual([...files], ['gone.js']);
+});
+
+test('restrict drops edges leaving the kept set', () => {
+  const { files } = withinHops(chain, ['a.js'], 1);
+  const out = restrict(chain, files);
+
+  assert.deepEqual(Object.keys(out).sort(), ['a.js', 'b.js']);
+  assert.deepEqual(out['a.js'], ['b.js']);
+  assert.deepEqual(out['b.js'], [], 'c.js is outside the set, so the edge must go');
 });

@@ -37,11 +37,6 @@ let cy: Core | null = null;
 let graph: Record<string, string[]> = {};
 let changed: Record<string, ChangeStatus> = {};
 let hop: Record<string, number> = {};
-let label: Record<string, string> = {};
-let owner: Record<string, string> = {};
-
-/** Node ids are "file#name"; the owning file is tracked alongside. */
-const fileOf = (id: string) => owner[id] ?? id;
 
 function importersOf(file: string): string[] {
   return Object.keys(graph).filter((k) => graph[k].includes(file));
@@ -59,7 +54,7 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
   const nodes: ElementDefinition[] = [...ids].map((id) => ({
     data: {
       id,
-      label: label[id] ?? id.split('/').pop() ?? id,
+      label: id.split('/').pop() ?? id,
       change: changed[id] ?? '',
       hop: String(hop[id] ?? 0),
     },
@@ -169,24 +164,21 @@ function showFile(id: string) {
     ? `<p><span class="swatch" style="background:${changed[id] === 'A' ? '#3fb950' : '#d29922'}"></span> ${CHANGE_LABEL[changed[id]]} in this diff</p>`
     : `<p class="dim">unchanged — ${hop[id] ?? 0} hop(s) from a change</p>`;
 
-  const file = fileOf(id);
-  const pretty = (ids: string[]) => ids.map((i) => `${label[i] ?? i}  ${owner[i] ?? ''}`);
   const hasDiff = changed[id] !== undefined;
 
   panel.innerHTML = `
-    <h2>${esc(label[id] ?? id)}</h2>
-    <p class="dim">${esc(owner[id] ?? '')}</p>
+    <h2>${esc(id)}</h2>
     ${state}
     <button id="open-file">Open file</button>
     ${hasDiff ? '<button id="hide-diff">Hide diff</button>' : ''}
-    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="dim">${esc(baseSel.value)} … ${esc(compareSel.value)}</span></div>` : ''}
+    ${hasDiff ? `<div class="diff-head"><strong>${esc(id)}</strong><span class="dim">${esc(baseSel.value)} … ${esc(compareSel.value)}</span></div>` : ''}
     <div id="diff-body"></div>
-    ${fileList('Calls', pretty(graph[id] ?? []))}
-    ${fileList('Called by', pretty(importersOf(id)))}
+    ${fileList('Imports', graph[id] ?? [])}
+    ${fileList('Imported by', importersOf(id))}
   `;
 
   document.getElementById('open-file')?.addEventListener('click', async () => {
-    const err = await window.diffish.openFile(file);
+    const err = await window.diffish.openFile(id);
     if (err) panel.insertAdjacentHTML('afterbegin', `<p class="error">${esc(err)}</p>`);
   });
 
@@ -201,7 +193,7 @@ function showFile(id: string) {
   // with it. Unchanged neighbours have nothing to show, so the panel stays narrow.
   if (hasDiff) {
     setWide(true);
-    void showDiff(file);
+    void showDiff(id);
   } else if (diffOpen) {
     setWide(false);
   }
@@ -222,7 +214,7 @@ function summary(missing: string[]): string {
   const deleted =
     missing.length > 0
       ? `<h3>Deleted files <span class="count">${missing.length}</span></h3>
-         <p class="dim">Not on the compare branch, so no functions to draw.</p>
+         <p class="dim">Not on the compare branch, so not drawn.</p>
          <ul>${missing.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
       : '';
 
@@ -253,8 +245,6 @@ function render(result: Extract<Analysis, { ok: true }>) {
   graph = result.graph;
   changed = result.changed;
   hop = result.hop;
-  label = result.label;
-  owner = result.file;
 
   const elements = toElements(graph);
   const edgeCount = elements.filter((e) => 'source' in e.data).length;
@@ -304,7 +294,7 @@ function render(result: Extract<Analysis, { ok: true }>) {
   cy.on('tap', 'node', (evt) => showFile(evt.target.id()));
 
   const changedCount = Object.keys(changed).length;
-  status.textContent = `${changedCount} changed, ${nodeCount - changedCount} related functions — ${edgeCount} calls`;
+  status.textContent = `${changedCount} changed, ${nodeCount - changedCount} related — ${edgeCount} imports`;
 
   panel.innerHTML = summary(result.missing);
   search.value = '';

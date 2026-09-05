@@ -52,50 +52,6 @@ export function parseNameStatus(stdout: string): Record<string, ChangeStatus> {
   return files;
 }
 
-/**
- * Parse `git diff -U0` into per-file line ranges on the compare side.
- * Split from the exec call so it can be tested without a git fixture.
- */
-export function parseHunks(stdout: string): Record<string, [number, number][]> {
-  const ranges: Record<string, [number, number][]> = {};
-  let file: string | null = null;
-
-  for (const line of stdout.split('\n')) {
-    if (line.startsWith('+++ ')) {
-      const p = line.slice(4).trim();
-      file = p === '/dev/null' ? null : p.replace(/^b\//, '');
-      continue;
-    }
-
-    if (!file || !line.startsWith('@@')) continue;
-
-    // "@@ -12,0 +13,4 @@" — the +side is what exists on the compare branch.
-    const m = /\+(\d+)(?:,(\d+))?/.exec(line);
-    if (!m) continue;
-
-    const start = Number(m[1]);
-    const count = m[2] === undefined ? 1 : Number(m[2]);
-    if (count === 0) continue; // pure deletion, nothing on this side to mark
-
-    (ranges[file] ??= []).push([start, start + count - 1]);
-  }
-
-  return ranges;
-}
-
-export async function changedLines(
-  root: string,
-  base: string,
-  compare: string,
-): Promise<GitResult<{ lines: Record<string, [number, number][]> }>> {
-  try {
-    const stdout = await git(root, ['diff', '-U0', '--no-color', `${base}...${compare}`]);
-    return { ok: true, lines: parseHunks(stdout) };
-  } catch (e) {
-    return { ok: false, error: message(e) };
-  }
-}
-
 export type DiffRow =
   | { kind: 'gap'; text: string }
   | { kind: 'context'; leftNo: number; rightNo: number; text: string }

@@ -1,18 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import fs from 'node:fs';
 import path from 'node:path';
 import { scan } from './scan';
 import {
   branches,
   changedFiles,
-  changedLines,
   fileDiff,
   withBranchCheckout,
   type ChangeStatus,
   type DiffRow,
 } from './git';
-import { withinHops } from './subgraph';
-import { buildFunctionGraph, markChangedFunctions, parseFile, type FnDef } from './functions';
+import { restrict, withinHops } from './subgraph';
 
 const HOPS = 2;
 
@@ -28,9 +25,6 @@ export type Analysis =
       changed: Record<string, ChangeStatus>;
       hop: Record<string, number>;
       missing: string[];
-      /** node id -> display name, and node id -> owning file */
-      label: Record<string, string>;
-      file: Record<string, string>;
     }
   | { ok: false; error: string };
 
@@ -93,11 +87,6 @@ ipcMain.handle(
       return { ok: false, error: `No changes between ${opts.base} and ${opts.compare}` };
     }
 
-    const lines = await changedLines(projectRoot, opts.base, opts.compare);
-    if (!lines.ok) return lines;
-
-    // Everything that needs the compare branch on disk happens in here, so the
-    // throwaway worktree is still around when the function parser reads files.
     const work = async (dir: string): Promise<Analysis> => {
       const scanned = await scan(projectRoot, dir);
       if (!scanned.ok) return scanned;
@@ -115,38 +104,13 @@ ipcMain.handle(
 
       const { files, distance } = withinHops(scanned.graph, seeds, HOPS);
 
-      const read = (f: string): string | null => {
-        try {
-          return fs.readFileSync(path.join(dir, f), 'utf8');
-        } catch {
-          return null;
-        }
+      return {
+        ok: true,
+        graph: restrict(scanned.graph, files),
+        changed,
+        hop: Object.fromEntries(distance),
+        missing,
       };
-
-      const fns = buildFunctionGraph([...files], scanned.graph, read);
-
-      // Re-parse only the changed files to get spans, then intersect with the diff
-      // hunks — otherwise every function in a touched file would look changed.
-      const defs: FnDef[] = [];
-      for (const f of seeds) {
-        const code = read(f);
-        if (code !== null) defs.push(...parseFile(f, code).defs);
-      }
-      const touched = new Set(markChangedFunctions(defs, lines.lines));
-
-      const fnChanged: Record<string, ChangeStatus> = {};
-      const fnHop: Record<string, number> = {};
-      for (const id of Object.keys(fns.graph)) {
-        const owner = fns.file[id];
-        if (touched.has(id)) fnChanged[id] = changed[owner] === 'A' ? 'A' : 'M';
-        fnHop[id] = distance.get(owner) ?? HOPS;
-      }
-
-      if (Object.keys(fns.graph).length === 0) {
-        return { ok: false, error: 'No named functions found in the changed files or their neighbours.' };
-      }
-
-      return { ok: true, graph: fns.graph, changed: fnChanged, hop: fnHop, missing, label: fns.label, file: fns.file };
     };
 
     // tradeoff: scanning the working directory is the fast path and picks up
