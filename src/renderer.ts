@@ -1,23 +1,39 @@
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
-import type { ScanResult } from './scan';
+import type { Analysis, Project } from './main';
+import type { ChangeStatus } from './git';
 
 declare global {
   interface Window {
     diffish: {
-      pickProject(): Promise<ScanResult | null>;
+      pickProject(): Promise<Project>;
+      analyse(opts: { mode: 'diff' | 'repo'; base: string; compare: string }): Promise<Analysis>;
       openFile(relative: string): Promise<string>;
     };
   }
 }
 
 const openBtn = document.getElementById('open-project') as HTMLButtonElement;
+const baseSel = document.getElementById('base') as HTMLSelectElement;
+const compareSel = document.getElementById('compare') as HTMLSelectElement;
+const modeInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="mode"]')];
 const search = document.getElementById('search') as HTMLInputElement;
 const status = document.getElementById('status') as HTMLElement;
 const panel = document.getElementById('panel') as HTMLElement;
 const cyEl = document.getElementById('cy') as HTMLElement;
 
+const CHANGE_LABEL: Record<ChangeStatus, string> = {
+  A: 'added',
+  M: 'modified',
+  D: 'deleted',
+  R: 'renamed',
+};
+
 let cy: Core | null = null;
 let graph: Record<string, string[]> = {};
+let changed: Record<string, ChangeStatus> = {};
+let hop: Record<string, number> = {};
+
+const mode = () => (modeInputs.find((i) => i.checked)?.value ?? 'diff') as 'diff' | 'repo';
 
 function importersOf(file: string): string[] {
   return Object.keys(graph).filter((k) => graph[k].includes(file));
@@ -33,7 +49,12 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
   }
 
   const nodes: ElementDefinition[] = [...ids].map((id) => ({
-    data: { id, label: id.split('/').pop() ?? id, kind: 'file' },
+    data: {
+      id,
+      label: id.split('/').pop() ?? id,
+      change: changed[id] ?? '',
+      hop: String(hop[id] ?? 0),
+    },
   }));
 
   const edges: ElementDefinition[] = Object.entries(g).flatMap(([file, deps]) =>
@@ -50,8 +71,13 @@ function fileList(title: string, files: string[]): string {
 }
 
 function showFile(id: string) {
+  const state = changed[id]
+    ? `<p><span class="swatch" style="background:${changed[id] === 'A' ? '#3fb950' : '#d29922'}"></span> ${CHANGE_LABEL[changed[id]]} in this diff</p>`
+    : `<p class="dim">unchanged — ${hop[id] ?? 0} hop(s) from a change</p>`;
+
   panel.innerHTML = `
     <h2>${id}</h2>
+    ${state}
     <button id="open-file">Open file</button>
     ${fileList('Imports', graph[id] ?? [])}
     ${fileList('Imported by', importersOf(id))}
@@ -62,8 +88,36 @@ function showFile(id: string) {
   });
 }
 
-function render(result: Extract<ScanResult, { ok: true }>) {
+function summary(missing: string[]): string {
+  const counts = Object.values(changed).reduce<Record<string, number>>((acc, c) => {
+    acc[c] = (acc[c] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const legend =
+    mode() === 'repo'
+      ? ''
+      : `<ul class="legend">
+          <li><span class="swatch" style="background:#3fb950"></span>added ${counts.A ?? 0}</li>
+          <li><span class="swatch" style="background:#d29922"></span>modified ${(counts.M ?? 0) + (counts.R ?? 0)}</li>
+          <li><span class="swatch" style="background:#5b8def;opacity:.55"></span>related</li>
+        </ul>`;
+
+  const deleted =
+    missing.length > 0
+      ? `<h3>Deleted <span class="count">${missing.length}</span></h3>
+         <p class="dim">Not on the compare branch, so not drawn.</p>
+         <ul>${missing.map((f) => `<li>${f}</li>`).join('')}</ul>`
+      : '';
+
+  return `${legend}<p class="dim">Click a node for details.</p>${deleted}`;
+}
+
+function render(result: Extract<Analysis, { ok: true }>) {
   graph = result.graph;
+  changed = result.changed;
+  hop = result.hop;
+
   const elements = toElements(graph);
   const edgeCount = elements.filter((e) => 'source' in e.data).length;
   const nodeCount = elements.length - edgeCount;
@@ -86,6 +140,12 @@ function render(result: Extract<ScanResult, { ok: true }>) {
           height: 14,
         },
       },
+      // Related files stay visible but recede — one step back per hop.
+      { selector: 'node[hop = "1"]', style: { opacity: 0.55, width: 10, height: 10, 'font-size': 8 } },
+      { selector: 'node[hop = "2"]', style: { opacity: 0.3, width: 8, height: 8, 'font-size': 7 } },
+      { selector: 'node[change = "A"]', style: { 'background-color': '#3fb950', opacity: 1, width: 18, height: 18, 'font-size': 10 } },
+      { selector: 'node[change = "M"]', style: { 'background-color': '#d29922', opacity: 1, width: 18, height: 18, 'font-size': 10 } },
+      { selector: 'node[change = "R"]', style: { 'background-color': '#d29922', opacity: 1, width: 18, height: 18, 'font-size': 10 } },
       {
         selector: 'edge',
         style: {
@@ -97,8 +157,8 @@ function render(result: Extract<ScanResult, { ok: true }>) {
           'curve-style': 'bezier',
         },
       },
-      { selector: 'node:selected', style: { 'background-color': '#f0883e', width: 20, height: 20 } },
-      { selector: '.dimmed', style: { opacity: 0.15 } },
+      { selector: 'node:selected', style: { 'background-color': '#f0883e', width: 20, height: 20, opacity: 1 } },
+      { selector: '.dimmed', style: { opacity: 0.08 } },
     ],
     // tradeoff: cose gets slow and hairy past ~2000 nodes.
     // Upgrade path: collapse by folder, then cytoscape-fcose if still needed.
@@ -107,28 +167,66 @@ function render(result: Extract<ScanResult, { ok: true }>) {
 
   cy.on('tap', 'node', (evt) => showFile(evt.target.id()));
 
-  status.textContent = `${result.root} — ${nodeCount} files, ${edgeCount} imports`;
-  panel.innerHTML =
-    edgeCount === 0
-      ? `<p class="dim">${nodeCount} files, no imports between them. Click a node for details.</p>`
-      : `<p class="dim">Click a node for details.</p>`;
+  const changedCount = Object.keys(changed).length;
+  status.textContent =
+    mode() === 'repo'
+      ? `Repo — ${nodeCount} files, ${edgeCount} imports`
+      : `${changedCount} changed, ${nodeCount - Object.keys(changed).length} related — ${edgeCount} imports`;
+
+  panel.innerHTML = summary(result.missing);
+  search.value = '';
 }
 
-openBtn.addEventListener('click', async () => {
-  status.textContent = 'Scanning…';
-  const result = await window.diffish.pickProject();
+async function analyse() {
+  if (mode() === 'diff' && (!baseSel.value || !compareSel.value)) return;
 
-  if (result === null) {
-    status.textContent = graph && Object.keys(graph).length ? status.textContent : 'Ready';
-    return;
-  }
+  status.textContent = 'Analysing…';
+  const result = await window.diffish.analyse({
+    mode: mode(),
+    base: baseSel.value,
+    compare: compareSel.value,
+  });
+
   if (!result.ok) {
-    status.textContent = 'Scan failed';
+    status.textContent = 'Nothing to show';
     panel.innerHTML = `<p class="error">${result.error}</p>`;
+    cy?.destroy();
+    cy = null;
+    graph = {};
     return;
   }
   render(result);
+}
+
+function fillBranches(all: string[], base: string, current: string) {
+  const options = (selected: string) =>
+    all.map((b) => `<option value="${b}"${b === selected ? ' selected' : ''}>${b}</option>`).join('');
+
+  baseSel.innerHTML = options(base);
+  compareSel.innerHTML = options(current);
+  baseSel.disabled = all.length === 0;
+  compareSel.disabled = all.length === 0;
+}
+
+openBtn.addEventListener('click', async () => {
+  const project = await window.diffish.pickProject();
+  if (project === null) return;
+
+  fillBranches(project.branches, project.base, project.current);
+
+  if ('error' in project) {
+    // Not a git repo: Diff mode has nothing to work with, but Repo mode does.
+    modeInputs.find((i) => i.value === 'repo')!.checked = true;
+    panel.innerHTML = `<p class="error">${project.error}</p><p class="dim">Showing the whole repo instead.</p>`;
+  }
+
+  status.textContent = project.root;
+  await analyse();
 });
+
+for (const input of modeInputs) input.addEventListener('change', analyse);
+baseSel.addEventListener('change', analyse);
+compareSel.addEventListener('change', analyse);
 
 // Visual filter only — never re-runs the layout, so nodes keep their positions.
 search.addEventListener('input', () => {

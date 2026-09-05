@@ -49,7 +49,23 @@
         font: inherit;
         width: 220px;
       }
-      input:focus { outline: 1px solid var(--accent); }
+      input:focus, select:focus { outline: 1px solid var(--accent); }
+      select {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        color: var(--text);
+        padding: 5px 8px;
+        font: inherit;
+        max-width: 160px;
+      }
+      select:disabled { color: var(--dim); }
+      .mode, .branches { display: flex; align-items: center; gap: 6px; }
+      .mode label { display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--dim); }
+      .mode input { width: auto; accent-color: var(--accent); }
+      .legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; padding: 0; list-style: none; }
+      .legend li { display: flex; align-items: center; gap: 5px; color: var(--dim); font-size: 11px; }
+      .swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
       #status { color: var(--dim); margin-left: auto; font-variant-numeric: tabular-nums; }
       main { display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
       #cy { min-height: 0; }
@@ -71,6 +87,15 @@
   <body>
     <header>
       <button id="open-project">Open Project</button>
+      <span class="mode">
+        <label><input type="radio" name="mode" value="diff" checked /> Diff</label>
+        <label><input type="radio" name="mode" value="repo" /> Repo</label>
+      </span>
+      <span class="branches">
+        <select id="base" disabled></select>
+        <span class="dim">…</span>
+        <select id="compare" disabled></select>
+      </span>
       <input id="search" type="search" placeholder="Filter files…" />
       <span id="status">Ready</span>
     </header>
