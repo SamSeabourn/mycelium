@@ -1,0 +1,24 @@
+{
+  "name": "diffish",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Explorable file-level dependency graph for JS/TS repositories",
+  "main": "dist/main.js",
+  "scripts": {
+    "esbuild": "node_modules/esbuild/bin/esbuild",
+    "build": "pnpm esbuild src/main.ts src/preload.ts src/scan.ts --bundle --platform=node --packages=external --outdir=dist && pnpm esbuild src/renderer.ts --bundle --outfile=dist/renderer.js && cp src/index.html dist/",
+    "start": "pnpm build && electron .",
+    "check": "tsc --noEmit",
+    "test": "pnpm build && node --test test/*.test.js"
+  },
+  "dependencies": {
+    "cytoscape": "3.34.2",
+    "madge": "8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "44.2.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

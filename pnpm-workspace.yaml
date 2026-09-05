@@ -1,0 +1,5 @@
+# Explicit install-script allowlist. esbuild's postinstall downloads its prebuilt
+# Go binary — that is what it is for. Everything else in the tree stays blocked.
+# electron does not ask for one on v44; if that ever changes, pnpm will prompt.
+allowBuilds:
+  esbuild: true
