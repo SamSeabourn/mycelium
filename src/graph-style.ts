@@ -52,6 +52,9 @@ export function graphStyle(): StylesheetJson {
         color: INK,
         'font-family': HAND,
         'font-size': 11,
+        // Labels sit back until you pick a node — at a glance the map is shape and
+        // colour, and the name is there when you actually want it.
+        'text-opacity': 0.33,
         'text-valign': 'bottom',
         'text-margin-y': 5,
         width: 16,
@@ -112,7 +115,22 @@ export function graphStyle(): StylesheetJson {
         'curve-style': 'straight',
       },
     },
-    { selector: 'node:selected', style: { 'background-color': '#2f5fd0', 'border-color': '#1a3b8a', width: 26, height: 26, opacity: 1 } },
+    {
+      selector: 'node:selected',
+      style: {
+        'background-color': '#2f5fd0',
+        'border-color': '#1a3b8a',
+        width: 26,
+        height: 26,
+        opacity: 1,
+        // The selected node is the one you want to read, so its label comes forward.
+        label: 'data(label)',
+        'text-opacity': 1,
+        'font-size': 14,
+        color: INK,
+        'z-index': 10,
+      },
+    },
     { selector: '.dimmed', style: { opacity: 0.1 } },
   ] as StylesheetJson;
 }

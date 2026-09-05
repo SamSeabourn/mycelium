@@ -311,17 +311,21 @@ function layoutFor(): cytoscape.LayoutOptions {
     name: 'cose',
     animate: false,
     randomize: true,
-    // Hubs are the crowded part, not the map as a whole. Strong repulsion with
-    // slack springs (low elasticity) lets a hub's neighbours push apart instead of
-    // being reeled back in; gravity stays moderate so components don't drift into
-    // empty space and shrink everything on fit.
-    nodeRepulsion: 240000,
-    idealEdgeLength: 170,
-    edgeElasticity: 18,
-    nodeOverlap: 120,
-    gravity: 0.45,
-    componentSpacing: 160,
-    numIter: 3000,
+    // Hub crowding, not overall size, is the problem — and a sprawling layout makes
+    // it worse, because fit() zooms out to contain the outliers and squeezes the
+    // middle. Firm gravity keeps the drawing compact so the zoom stays close, while
+    // heavy repulsion and node overlap do the local separating. The extra heat and
+    // slow cooling give those forces enough iterations to actually resolve.
+    nodeRepulsion: 400000,
+    idealEdgeLength: 110,
+    edgeElasticity: 10,
+    nodeOverlap: 220,
+    gravity: 1.4,
+    componentSpacing: 120,
+    initialTemp: 2500,
+    coolingFactor: 0.98,
+    minTemp: 1,
+    numIter: 4000,
     padding: 50,
   } as cytoscape.LayoutOptions;
 }
