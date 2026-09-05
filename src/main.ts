@@ -9,7 +9,7 @@ import {
   type ChangeStatus,
   type DiffRow,
 } from './git';
-import { restrict, withinHops } from './subgraph';
+import { hiddenNeighbours, restrict, withinHops } from './subgraph';
 
 const HOPS = 2;
 
@@ -25,6 +25,8 @@ export type Analysis =
       changed: Record<string, ChangeStatus>;
       hop: Record<string, number>;
       missing: string[];
+      /** kept file -> neighbours the 2-hop cut removed, drawn as ghosts */
+      ghosts: Record<string, string[]>;
     }
   | { ok: false; error: string };
 
@@ -110,6 +112,7 @@ ipcMain.handle(
         changed,
         hop: Object.fromEntries(distance),
         missing,
+        ghosts: hiddenNeighbours(scanned.graph, files),
       };
     };
 

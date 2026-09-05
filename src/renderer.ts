@@ -38,9 +38,37 @@ let cy: Core | null = null;
 let graph: Record<string, string[]> = {};
 let changed: Record<string, ChangeStatus> = {};
 let hop: Record<string, number> = {};
+let ghosts: Record<string, string[]> = {};
 
 function importersOf(file: string): string[] {
   return Object.keys(graph).filter((k) => graph[k].includes(file));
+}
+
+const GHOST_PREFIX = 'ghost:';
+// Past this many hidden neighbours a node would drown in stubs, so they collapse
+// into one "+N more" marker instead.
+// tradeoff: fixed cap. If a summary stub needs expanding on click, that is the
+// upgrade — do it when a real repo makes the aggregate feel opaque.
+const GHOST_MAX = 6;
+
+function ghostElements(): ElementDefinition[] {
+  const out: ElementDefinition[] = [];
+
+  for (const [parent, hidden] of Object.entries(ghosts)) {
+    const stubs =
+      hidden.length <= GHOST_MAX
+        ? hidden.map((h) => ({ id: `${GHOST_PREFIX}${parent}|${h}`, label: h.split('/').pop() ?? h }))
+        : [{ id: `${GHOST_PREFIX}${parent}|+`, label: `+${hidden.length} more` }];
+
+    for (const stub of stubs) {
+      out.push({ data: { id: stub.id, label: stub.label, ghost: '1', poly: '0' } });
+      out.push({
+        data: { id: `${stub.id}~edge`, source: parent, target: stub.id, ghost: '1', bend: 0 },
+      });
+    }
+  }
+
+  return out;
 }
 
 function toElements(g: Record<string, string[]>): ElementDefinition[] {
@@ -70,7 +98,7 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
     }),
   );
 
-  return [...nodes, ...edges];
+  return [...nodes, ...edges, ...ghostElements()];
 }
 
 function fileList(title: string, files: string[]): string {
@@ -192,7 +220,24 @@ async function showDiff(file: string) {
       : diffTable(result.rows);
 }
 
+function showGhost(id: string) {
+  const [parent, name] = id.slice(GHOST_PREFIX.length).split('|');
+  const hidden = ghosts[parent] ?? [];
+
+  panel.innerHTML =
+    name === '+'
+      ? `<h2>${hidden.length} more connections</h2>
+         <p class="dim">Connected to <strong>${esc(parent)}</strong> but outside the 2-hop window, so not drawn in full.</p>
+         <ul>${hidden.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+      : `<h2>${esc(name)}</h2>
+         <p class="dim">Outside the 2-hop window. Connected to <strong>${esc(parent)}</strong>.</p>`;
+
+  if (diffOpen) setWide(false);
+}
+
 function showFile(id: string) {
+  if (id.startsWith(GHOST_PREFIX)) return showGhost(id);
+
   const state = changed[id]
     ? `<p><span class="swatch" style="background:${changed[id] === 'A' ? '#2e8b45' : '#e8a020'}"></span> ${CHANGE_LABEL[changed[id]]} in this diff</p>`
     : `<p class="dim">unchanged — ${hop[id] ?? 0} hop(s) from a change</p>`;
@@ -255,22 +300,20 @@ function summary(missing: string[]): string {
 }
 
 /**
- * Layered top-down from whatever changed, so the graph reads as a cascade.
- * With no roots (Repo mode) there is nothing to layer from, so fall back to force.
+ * Force-directed. Spreads the map out and copes with cycles, which a layered
+ * layout cannot — it also has no roots to layer from once ghost stubs are in.
  */
-function layoutFor(roots: string[]): cytoscape.LayoutOptions {
-  if (roots.length === 0) {
-    // tradeoff: cose gets slow and hairy past ~2000 nodes.
-    // Upgrade path: collapse by folder, then cytoscape-fcose if still needed.
-    return { name: 'cose', animate: false, nodeRepulsion: 8000, idealEdgeLength: 60 } as cytoscape.LayoutOptions;
-  }
+function layoutFor(): cytoscape.LayoutOptions {
+  // tradeoff: cose gets slow and hairy past ~2000 nodes.
+  // Upgrade path: collapse by folder, then cytoscape-fcose if still needed.
   return {
-    name: 'breadthfirst',
+    name: 'cose',
     animate: false,
-    directed: false,
-    roots: roots.map((r) => `#${CSS.escape(r)}`).join(', '),
-    spacingFactor: 1.1,
-    padding: 30,
+    nodeRepulsion: 26000,
+    idealEdgeLength: 145,
+    nodeOverlap: 40,
+    gravity: 0.6,
+    padding: 40,
   } as cytoscape.LayoutOptions;
 }
 
@@ -278,6 +321,7 @@ function render(result: Extract<Analysis, { ok: true }>) {
   graph = result.graph;
   changed = result.changed;
   hop = result.hop;
+  ghosts = result.ghosts;
 
   const elements = toElements(graph);
   const edgeCount = elements.filter((e) => 'source' in e.data).length;
@@ -288,13 +332,17 @@ function render(result: Extract<Analysis, { ok: true }>) {
     container: cyEl,
     elements,
     style: graphStyle(),
-    layout: layoutFor(Object.keys(changed)),
+    layout: layoutFor(),
   });
 
   cy.on('tap', 'node', (evt) => showFile(evt.target.id()));
 
   const changedCount = Object.keys(changed).length;
-  status.textContent = `${changedCount} changed, ${nodeCount - changedCount} related — ${edgeCount} imports`;
+  const ghostCount = Object.values(ghosts).reduce((n, list) => n + list.length, 0);
+  const real = Object.keys(graph).length;
+  status.textContent =
+    `${changedCount} changed, ${real - changedCount} related — ${edgeCount} imports` +
+    (ghostCount > 0 ? ` · ${ghostCount} hidden` : '');
 
   panel.innerHTML = summary(result.missing);
   search.value = '';

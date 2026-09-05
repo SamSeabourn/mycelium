@@ -51,7 +51,7 @@ export function graphStyle(): StylesheetJson {
         label: 'data(label)',
         color: INK,
         'font-family': HAND,
-        'font-size': 13,
+        'font-size': 11,
         'text-valign': 'bottom',
         'text-margin-y': 5,
         width: 16,
@@ -60,15 +60,15 @@ export function graphStyle(): StylesheetJson {
     },
     ...outlineRules,
     // Related files stay visible but recede — one step back per hop.
-    { selector: 'node[hop = "1"]', style: { opacity: 0.72, width: 13, height: 13, 'font-size': 12 } },
-    { selector: 'node[hop = "2"]', style: { opacity: 0.45, width: 11, height: 11, 'font-size': 11 } },
+    { selector: 'node[hop = "1"]', style: { opacity: 0.72, width: 13, height: 13, 'font-size': 10 } },
+    { selector: 'node[hop = "2"]', style: { opacity: 0.45, width: 11, height: 11, 'font-size': 10 } },
     {
       selector: 'node[change = "A"]',
-      style: { 'background-color': ADDED, 'border-color': '#1d5c2c', 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 14 },
+      style: { 'background-color': ADDED, 'border-color': '#1d5c2c', 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 13 },
     },
     {
       selector: 'node[change = "M"], node[change = "R"]',
-      style: { 'background-color': MODIFIED, 'border-color': '#8a5c00', 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 14 },
+      style: { 'background-color': MODIFIED, 'border-color': '#8a5c00', 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 13 },
     },
     {
       selector: 'edge',
@@ -82,6 +82,32 @@ export function graphStyle(): StylesheetJson {
         'curve-style': 'unbundled-bezier',
         'control-point-distances': 'data(bend)',
         'control-point-weights': 0.5,
+      },
+    },
+    // Ghosts: neighbours the hop cut removed. Deliberately faint and dashed so they
+    // read as "there is more here" rather than as part of the diff.
+    {
+      selector: 'node[ghost = "1"]',
+      style: {
+        'background-opacity': 0,
+        'border-color': '#a8a294',
+        'border-width': 1.2,
+        'border-style': 'dashed',
+        width: 9,
+        height: 9,
+        'font-size': 9,
+        color: '#9b9486',
+        opacity: 0.85,
+      },
+    },
+    {
+      selector: 'edge[ghost = "1"]',
+      style: {
+        width: 1,
+        'line-style': 'dashed',
+        'line-color': '#bdb6a6',
+        'target-arrow-shape': 'none',
+        'curve-style': 'straight',
       },
     },
     { selector: 'node:selected', style: { 'background-color': '#2f5fd0', 'border-color': '#1a3b8a', width: 26, height: 26, opacity: 1 } },

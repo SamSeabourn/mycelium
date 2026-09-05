@@ -48,6 +48,37 @@ export function withinHops(
   return { files: new Set(distance.keys()), distance };
 }
 
+/**
+ * For each kept file, the neighbours the hop cut removed.
+ *
+ * Without this the graph quietly lies: a node on the boundary looks like it has two
+ * connections when it really has twenty, and nothing on screen says so.
+ */
+export function hiddenNeighbours(
+  graph: Record<string, string[]>,
+  keep: Set<string>,
+): Record<string, string[]> {
+  const neighbours = new Map<string, Set<string>>();
+  const link = (a: string, b: string) => {
+    if (!neighbours.has(a)) neighbours.set(a, new Set());
+    neighbours.get(a)!.add(b);
+  };
+
+  for (const [file, deps] of Object.entries(graph)) {
+    for (const dep of deps) {
+      link(file, dep);
+      link(dep, file);
+    }
+  }
+
+  const out: Record<string, string[]> = {};
+  for (const file of keep) {
+    const hidden = [...(neighbours.get(file) ?? [])].filter((n) => !keep.has(n)).sort();
+    if (hidden.length > 0) out[file] = hidden;
+  }
+  return out;
+}
+
 /** Keep only the edges whose endpoints both survived the hop filter. */
 export function restrict(
   graph: Record<string, string[]>,
