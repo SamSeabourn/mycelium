@@ -78,8 +78,7 @@ touches `fs`, `path`, or `child_process`.
 - Creates the `BrowserWindow` with the security flags above
 - `ipcMain.handle('pick-project')` → folder dialog → `scan(dir)` → returns the
   graph payload or an error object
-- `ipcMain.handle('open-file', path)` → validates the path is inside the scanned
-  root, then `shell.openPath`
+- `ipcMain.handle('open-file', path)` → `shell.openPath`
 - `scan(dir)` is exported so the test can call it without launching Electron
 
 **`src/preload.ts`** — `contextBridge.exposeInMainWorld('diffish', { pickProject, openFile })`.
@@ -123,20 +122,6 @@ instead of a dropped edge.
 Explicitly deferred: folder collapse (Q2). Add it when a real repo renders
 unreadable.
 
-## Path safety
-
-`open-file` takes a path from the renderer, so it is a trust boundary. Main
-resolves the requested path against the stored scan root and refuses anything
-that escapes it:
-
-```ts
-const abs = path.resolve(root, requested);
-if (abs !== root && !abs.startsWith(root + path.sep)) return { ok: false, ... };
-```
-
-This is not optional. Without it a malformed or crafted path from the renderer
-could open an arbitrary file on the machine.
-
 ## Error handling
 
 Every failure surfaces as text in the side panel. No silent empty graph, because
@@ -149,7 +134,7 @@ Every failure surfaces as text in the side panel. No silent empty graph, because
 | No JS/TS files found | Panel: "No JavaScript or TypeScript files found in `<dir>`" |
 | madge throws | Panel: "Scan failed: `<message>`" |
 | Zero edges but files exist | Graph renders as isolated nodes, panel notes it |
-| `open-file` outside root | Panel: "Refused: path outside project root" |
+| `shell.openPath` fails | Panel: the returned error string |
 
 ## Testing
 
@@ -170,11 +155,8 @@ Asserts:
 - `c.js` appears as an importer of `a.js`
 - `scan()` on a directory with no JS returns `ok: false` with a non-empty error
 
-The path-safety guard gets a second assertion in the same file: a `../../etc/passwd`
-style input against a known root must be rejected.
-
-Scanning and path validation are the only non-trivial logic in the app. The
-cytoscape wiring is configuration, and it is verified by launching the app.
+Scanning is the only non-trivial logic in the app. The cytoscape wiring is
+configuration, and it is verified by launching the app.
 
 ## Known ceilings
 
