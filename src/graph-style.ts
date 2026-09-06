@@ -8,8 +8,11 @@ const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-ser
  * `data-theme` is set on <html> instead of keeping its own palette in sync by hand.
  */
 export function graphStyle(): StylesheetJson {
-  const modified = themeColor('--color-accent');
-  const added = themeColor('--color-secondary');
+  // Standard git/diff convention: green added, amber modified, red deleted. Using
+  // the semantic theme slots rather than accent/secondary keeps that meaning intact
+  // whichever DaisyUI theme is set.
+  const added = themeColor('--color-success');
+  const modified = themeColor('--color-warning');
   const selected = themeColor('--color-primary');
   const ink = themeColor('--color-base-content');
   const surface = themeColor('--color-base-100');

@@ -167,15 +167,41 @@ export function parseUnified(stdout: string): DiffRow[] {
   return rows;
 }
 
+/**
+ * Narrow a file's diff to one function's line range on the compare side.
+ *
+ * Deletions have no compare-side line number, so they inherit the position of the
+ * last line that did — otherwise a removed line would be dropped from the very
+ * function whose diff you asked to see. Hunk headers go: the panel already names
+ * the function, so they are noise at this scale.
+ */
+export function sliceRows(rows: DiffRow[], from: number, to: number): DiffRow[] {
+  let at = 0;
+  const out: DiffRow[] = [];
+
+  for (const row of rows) {
+    if (row.kind === 'gap') continue;
+    if (row.kind === 'context') at = row.rightNo;
+    else if (row.rightNo !== null) at = row.rightNo;
+    // else: pure deletion — keep `at` where it was.
+
+    if (at >= from && at <= to) out.push(row);
+  }
+
+  return out;
+}
+
 export async function fileDiff(
   root: string,
   base: string,
   compare: string,
   file: string,
+  range?: [number, number],
 ): Promise<GitResult<{ rows: DiffRow[] }>> {
   try {
     const stdout = await git(root, ['diff', '--no-color', `${base}...${compare}`, '--', file]);
-    return { ok: true, rows: parseUnified(stdout) };
+    const rows = parseUnified(stdout);
+    return { ok: true, rows: range ? sliceRows(rows, range[0], range[1]) : rows };
   } catch (e) {
     return { ok: false, error: message(e) };
   }

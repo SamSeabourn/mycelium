@@ -34,6 +34,8 @@ export type Analysis =
       ghosts: Record<string, string[]>;
       label: Record<string, string>;
       file: Record<string, string>;
+      /** fn id -> [firstLine, lastLine] on the compare branch */
+      span: Record<string, [number, number]>;
     }
   | { ok: false; error: string };
 
@@ -44,7 +46,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
-    backgroundColor: '#14161a',
+    backgroundColor: '#ffffff',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -159,6 +161,7 @@ ipcMain.handle(
         ghosts: fns.ghosts,
         label: fns.label,
         file: fns.file,
+        span: fns.span,
       };
     };
 
@@ -174,9 +177,12 @@ export type FileDiff = { ok: true; rows: DiffRow[] } | { ok: false; error: strin
 
 ipcMain.handle(
   'file-diff',
-  async (_event, opts: { base: string; compare: string; file: string }): Promise<FileDiff> => {
+  async (
+    _event,
+    opts: { base: string; compare: string; file: string; range?: [number, number] },
+  ): Promise<FileDiff> => {
     if (!projectRoot) return { ok: false, error: 'No project open' };
-    return fileDiff(projectRoot, opts.base, opts.compare, opts.file);
+    return fileDiff(projectRoot, opts.base, opts.compare, opts.file, opts.range);
   },
 );
 

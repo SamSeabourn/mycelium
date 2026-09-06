@@ -12,7 +12,7 @@ declare global {
     diffish: {
       pickProject(): Promise<Project>;
       analyse(opts: { base: string; compare: string }): Promise<Analysis>;
-      fileDiff(opts: { base: string; compare: string; file: string }): Promise<FileDiff>;
+      fileDiff(opts: { base: string; compare: string; file: string; range?: [number, number] }): Promise<FileDiff>;
       openFile(relative: string): Promise<string>;
     };
   }
@@ -45,6 +45,7 @@ let hop: Record<string, number> = {};
 let ghosts: Record<string, string[]> = {};
 let label: Record<string, string> = {};
 let owner: Record<string, string> = {};
+let span: Record<string, [number, number]> = {};
 
 /** Node ids are "file#name"; the diff view needs the file half. */
 const fileOf = (id: string) => owner[id] ?? id;
@@ -214,7 +215,7 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
   return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
 }
 
-async function showDiff(file: string) {
+async function showDiff(id: string) {
   const host = document.getElementById('diff-body');
   if (!host) return;
 
@@ -222,7 +223,10 @@ async function showDiff(file: string) {
   const result = await window.diffish.fileDiff({
     base: baseSel.value,
     compare: compareSel.value,
-    file,
+    file: fileOf(id),
+    // Scope to just this function's lines. Without a span (a node we never parsed)
+    // fall back to the whole file rather than showing nothing.
+    range: span[id],
   });
 
   if (!result.ok) {
@@ -231,7 +235,7 @@ async function showDiff(file: string) {
   }
   host.innerHTML =
     result.rows.length === 0
-      ? '<p class="path">No changes in this file between the selected branches.</p>'
+      ? '<p class="path">No changes inside this function between the selected branches.</p>'
       : diffTable(result.rows);
 }
 
@@ -254,7 +258,7 @@ function showFile(id: string) {
   if (id.startsWith(GHOST_PREFIX)) return showGhost(id);
 
   const state = changed[id]
-    ? `<span class="badge badge-sm ${changed[id] === 'A' ? 'badge-secondary' : 'badge-accent'}">${CHANGE_LABEL[changed[id]]}</span>`
+    ? `<span class="badge badge-sm ${changed[id] === 'A' ? 'badge-success' : 'badge-warning'}">${CHANGE_LABEL[changed[id]]}</span>`
     : `<span class="badge badge-sm badge-ghost">unchanged · ${hop[id] ?? 0} hop(s) away</span>`;
 
   const hasDiff = changed[id] !== undefined;
@@ -269,7 +273,7 @@ function showFile(id: string) {
       <button id="open-file" class="btn btn-sm">Open file</button>
       ${hasDiff ? '<button id="hide-diff" class="btn btn-sm btn-ghost">Hide diff</button>' : ''}
     </div>
-    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="opacity-60">${esc(baseSel.value)} … ${esc(compareSel.value)}</span></div>` : ''}
+    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="opacity-60">${esc(baseSel.value)} … ${esc(compareSel.value)}${span[id] ? ` · lines ${span[id][0]}-${span[id][1]}` : ''}</span></div>` : ''}
     <div id="diff-body"></div>
     ${fileList('Calls', pretty(graph[id] ?? []))}
     ${fileList('Called by', pretty(importersOf(id)))}
@@ -291,7 +295,7 @@ function showFile(id: string) {
   // with it. Unchanged neighbours have nothing to show, so the panel stays narrow.
   if (hasDiff) {
     setWide(true);
-    void showDiff(file);
+    void showDiff(id);
   } else if (diffOpen) {
     setWide(false);
   }
@@ -304,8 +308,8 @@ function summary(missing: string[]): string {
   }, {});
 
   const legend = `<div class="legend">
-      <span class="badge badge-sm badge-secondary">added ${counts.A ?? 0}</span>
-      <span class="badge badge-sm badge-accent">modified ${(counts.M ?? 0) + (counts.R ?? 0)}</span>
+      <span class="badge badge-sm badge-success">added ${counts.A ?? 0}</span>
+      <span class="badge badge-sm badge-warning">modified ${(counts.M ?? 0) + (counts.R ?? 0)}</span>
       <span class="badge badge-sm badge-ghost">related</span>
     </div>`;
 
@@ -353,6 +357,7 @@ function render(result: Extract<Analysis, { ok: true }>) {
   ghosts = result.ghosts;
   label = result.label;
   owner = result.file;
+  span = result.span;
 
   const elements = toElements(graph);
   const edgeCount = elements.filter((e) => 'source' in e.data).length;

@@ -180,6 +180,8 @@ export type FnGraph = {
   file: Record<string, string>;
   /** caller id -> call targets in files outside the hop window */
   ghosts: Record<string, string[]>;
+  /** fn id -> [firstLine, lastLine] on the compare branch, for slicing its diff */
+  span: Record<string, [number, number]>;
 };
 
 /**
@@ -215,12 +217,14 @@ export function buildFunctionGraph(
   const label: Record<string, string> = {};
   const file: Record<string, string> = {};
   const ghosts: Record<string, string[]> = {};
+  const span: Record<string, [number, number]> = {};
 
   for (const [f, facts_] of facts) {
     for (const def of facts_.defs) {
       graph[def.id] ??= [];
       label[def.id] = def.name;
       file[def.id] = def.file;
+      span[def.id] = [def.start, def.end];
     }
 
     for (const call of facts_.calls) {
@@ -250,7 +254,7 @@ export function buildFunctionGraph(
     }
   }
 
-  return { graph, label, file, ghosts };
+  return { graph, label, file, ghosts, span };
 }
 
 /** A function counts as changed when a changed line falls inside its span. */

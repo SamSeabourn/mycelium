@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseNameStatus, parseUnified } = require('../dist/git.js');
+const { parseNameStatus, parseUnified, sliceRows } = require('../dist/git.js');
 
 const unified = (...lines) => lines.join('\n');
 
@@ -85,3 +85,38 @@ test('parseNameStatus on empty output returns nothing', () => {
   assert.deepEqual(parseNameStatus('\n\n'), {});
 });
 
+
+// One file's diff, spanning two functions: alpha at 10-12, beta at 20-22.
+const wholeFile = [
+  { kind: 'gap', text: 'function alpha()' },
+  { kind: 'context', leftNo: 9, rightNo: 9, text: 'before' },
+  { kind: 'context', leftNo: 10, rightNo: 10, text: 'function alpha() {' },
+  { kind: 'change', leftNo: 11, left: 'old', rightNo: 11, right: 'new' },
+  { kind: 'context', leftNo: 12, rightNo: 12, text: '}' },
+  { kind: 'gap', text: 'function beta()' },
+  { kind: 'context', leftNo: 20, rightNo: 20, text: 'function beta() {' },
+  { kind: 'change', leftNo: 21, left: 'gone', rightNo: null, right: null },
+  { kind: 'context', leftNo: 22, rightNo: 21, text: '}' },
+];
+
+test('sliceRows keeps only the requested function', () => {
+  const rows = sliceRows(wholeFile, 10, 12);
+
+  assert.deepEqual(
+    rows.map((r) => r.rightNo),
+    [10, 11, 12],
+    'lines outside the span, and hunk headers, are dropped',
+  );
+});
+
+test('sliceRows keeps a deletion that has no compare-side line', () => {
+  // The removed line sits inside beta and must not vanish from beta's own diff.
+  const rows = sliceRows(wholeFile, 20, 21);
+
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[1], { kind: 'change', leftNo: 21, left: 'gone', rightNo: null, right: null });
+});
+
+test('sliceRows returns nothing when the function is untouched', () => {
+  assert.deepEqual(sliceRows(wholeFile, 40, 50), []);
+});
