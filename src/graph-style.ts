@@ -70,6 +70,12 @@ export function graphStyle(): StylesheetJson {
         'control-point-weights': 0.5,
       },
     },
+    // Declared before the ghost rules so a ghost stub stays faint even when its
+    // caller changed — a ghost is by definition something we are not showing.
+    {
+      selector: 'edge[direct = "1"]',
+      style: { 'line-color': ink, 'target-arrow-color': ink, width: 1.8, 'arrow-scale': 0.9 },
+    },
     // Ghosts: calls into files outside the hop window. Deliberately faint and dashed
     // so they read as "there is more here" rather than as part of the diff.
     {

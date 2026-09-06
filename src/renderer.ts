@@ -105,7 +105,10 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
   const edges: ElementDefinition[] = Object.entries(g).flatMap(([file, deps]) =>
     deps.map((dep) => {
       const id = `${file}->${dep}`;
-      return { data: { id, source: file, target: dep, bend: edgeBend(id) } };
+      // A call that touches something you changed is the point of the graph, so it
+      // is drawn at full strength; everything else is background wiring.
+      const direct = changed[file] !== undefined || changed[dep] !== undefined;
+      return { data: { id, source: file, target: dep, bend: edgeBend(id), direct: direct ? '1' : '0' } };
     }),
   );
 
