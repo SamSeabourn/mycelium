@@ -15,18 +15,20 @@ export function graphStyle(): StylesheetJson {
   const modified = themeColor('--color-warning');
   const selected = themeColor('--color-primary');
   const ink = themeColor('--color-base-content');
-  const surface = themeColor('--color-base-100');
   const muted = themeColor('--color-base-300');
-  const neutral = themeColor('--color-neutral');
 
   return [
     {
       selector: 'node',
       style: {
         shape: 'ellipse',
-        'background-color': surface,
-        'border-color': neutral,
-        'border-width': 1.5,
+        // Unchanged functions are context, so they sit back as plain grey discs.
+        // --color-neutral is near-black in most themes, which made them read as
+        // loudly as the changed ones.
+        'background-color': muted,
+        'border-color': ink,
+        'border-opacity': 0.25,
+        'border-width': 1.2,
         label: 'data(label)',
         color: ink,
         'font-family': SANS,
@@ -47,11 +49,11 @@ export function graphStyle(): StylesheetJson {
     { selector: 'node[hop = "3"]', style: { opacity: 0.22, width: 9, height: 9, label: '' } },
     {
       selector: 'node[change = "A"]',
-      style: { 'background-color': added, 'border-color': ink, 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 13 },
+      style: { 'background-color': added, 'border-color': ink, 'border-opacity': 1, 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 13 },
     },
     {
       selector: 'node[change = "M"], node[change = "R"]',
-      style: { 'background-color': modified, 'border-color': ink, 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 13 },
+      style: { 'background-color': modified, 'border-color': ink, 'border-opacity': 1, 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 13 },
     },
     {
       selector: 'edge',
@@ -99,6 +101,7 @@ export function graphStyle(): StylesheetJson {
       style: {
         'background-color': selected,
         'border-color': ink,
+        'border-opacity': 1,
         'border-width': 2,
         width: 26,
         height: 26,
