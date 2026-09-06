@@ -2,7 +2,7 @@ import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import type { Analysis, FileDiff, Project } from './main';
 import type { ChangeStatus } from './git';
-import { edgeBend, graphStyle, hashPick, OUTLINES } from './graph-style';
+import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
 
 cytoscape.use(fcose);
@@ -73,7 +73,7 @@ function ghostElements(): ElementDefinition[] {
         : [{ id: `${GHOST_PREFIX}${parent}|+`, label: `+${hidden.length} more` }];
 
     for (const stub of stubs) {
-      out.push({ data: { id: stub.id, label: stub.label, ghost: '1', poly: '0' } });
+      out.push({ data: { id: stub.id, label: stub.label, ghost: '1' } });
       out.push({
         data: { id: `${stub.id}~edge`, source: parent, target: stub.id, ghost: '1', bend: 0 },
       });
@@ -98,8 +98,6 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
       label: label[id] ?? id.split('/').pop() ?? id,
       change: changed[id] ?? '',
       hop: String(hop[id] ?? 0),
-      // Which hand-drawn outline this node wears, fixed by path so it is stable.
-      poly: String(hashPick(id, OUTLINES.length)),
     },
   }));
 
@@ -113,10 +111,13 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
   return [...nodes, ...edges, ...ghostElements()];
 }
 
-function fileList(title: string, files: string[]): string {
-  if (files.length === 0) return `<h3>${title} <span class="count">0</span></h3><p class="dim">none</p>`;
-  const items = files.map((f) => `<li>${esc(f)}</li>`).join('');
-  return `<h3>${title} <span class="count">${files.length}</span></h3><ul>${items}</ul>`;
+function fileList(title: string, entries: { name: string; where?: string }[]): string {
+  const count = `<span class="badge badge-sm badge-ghost">${entries.length}</span>`;
+  if (entries.length === 0) return `<h3>${title} ${count}</h3><p class="path">none</p>`;
+  const items = entries
+    .map((e) => `<li>${esc(e.name)}${e.where ? `<span class="where">${esc(e.where)}</span>` : ''}</li>`)
+    .join('');
+  return `<h3>${title} ${count}</h3><ul class="list">${items}</ul>`;
 }
 
 let diffOpen = false;
@@ -217,7 +218,7 @@ async function showDiff(file: string) {
   const host = document.getElementById('diff-body');
   if (!host) return;
 
-  host.innerHTML = '<p class="dim">Loading…</p>';
+  host.innerHTML = '<p class="path">Loading…</p>';
   const result = await window.diffish.fileDiff({
     base: baseSel.value,
     compare: compareSel.value,
@@ -225,12 +226,12 @@ async function showDiff(file: string) {
   });
 
   if (!result.ok) {
-    host.innerHTML = `<p class="error">${esc(result.error)}</p>`;
+    host.innerHTML = `<div class="alert alert-error">${esc(result.error)}</div>`;
     return;
   }
   host.innerHTML =
     result.rows.length === 0
-      ? '<p class="dim">No changes in this file between the selected branches.</p>'
+      ? '<p class="path">No changes in this file between the selected branches.</p>'
       : diffTable(result.rows);
 }
 
@@ -241,10 +242,10 @@ function showGhost(id: string) {
   panel.innerHTML =
     name === '+'
       ? `<h2>${hidden.length} more calls</h2>
-         <p class="dim">Called by <strong>${esc(label[parent] ?? parent)}</strong> but defined outside the ${HOPS}-hop window, so not drawn in full.</p>
-         <ul>${hidden.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+         <p class="path">Called by <strong>${esc(label[parent] ?? parent)}</strong> but defined outside the ${HOPS}-hop window, so not drawn in full.</p>
+         <ul class="list">${hidden.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
       : `<h2>${esc(name.includes('#') ? name.slice(name.indexOf('#') + 1) : name)}</h2>
-         <p class="dim">Defined in <strong>${esc(name.split('#')[0])}</strong>, outside the ${HOPS}-hop window. Called by ${esc(label[parent] ?? parent)}.</p>`;
+         <p class="path">Defined in <strong>${esc(name.split('#')[0])}</strong>, outside the ${HOPS}-hop window. Called by ${esc(label[parent] ?? parent)}.</p>`;
 
   if (diffOpen) setWide(false);
 }
@@ -253,20 +254,22 @@ function showFile(id: string) {
   if (id.startsWith(GHOST_PREFIX)) return showGhost(id);
 
   const state = changed[id]
-    ? `<p><span class="swatch" style="background:${changed[id] === 'A' ? '#2e8b45' : '#e8a020'}"></span> ${CHANGE_LABEL[changed[id]]} in this diff</p>`
-    : `<p class="dim">unchanged — ${hop[id] ?? 0} hop(s) from a change</p>`;
+    ? `<span class="badge badge-sm ${changed[id] === 'A' ? 'badge-secondary' : 'badge-accent'}">${CHANGE_LABEL[changed[id]]}</span>`
+    : `<span class="badge badge-sm badge-ghost">unchanged · ${hop[id] ?? 0} hop(s) away</span>`;
 
   const hasDiff = changed[id] !== undefined;
   const file = fileOf(id);
-  const pretty = (ids: string[]) => ids.map((i) => `${label[i] ?? i}   ${owner[i] ?? ''}`);
+  const pretty = (ids: string[]) => ids.map((i) => ({ name: label[i] ?? i, where: owner[i] }));
 
   panel.innerHTML = `
     <h2>${esc(label[id] ?? id)}</h2>
-    <p class="dim">${esc(file)}</p>
+    <p class="path">${esc(file)}</p>
     ${state}
-    <button id="open-file">Open file</button>
-    ${hasDiff ? '<button id="hide-diff">Hide diff</button>' : ''}
-    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="dim">${esc(baseSel.value)} … ${esc(compareSel.value)}</span></div>` : ''}
+    <div class="actions">
+      <button id="open-file" class="btn btn-sm">Open file</button>
+      ${hasDiff ? '<button id="hide-diff" class="btn btn-sm btn-ghost">Hide diff</button>' : ''}
+    </div>
+    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="opacity-60">${esc(baseSel.value)} … ${esc(compareSel.value)}</span></div>` : ''}
     <div id="diff-body"></div>
     ${fileList('Calls', pretty(graph[id] ?? []))}
     ${fileList('Called by', pretty(importersOf(id)))}
@@ -274,7 +277,7 @@ function showFile(id: string) {
 
   document.getElementById('open-file')?.addEventListener('click', async () => {
     const err = await window.diffish.openFile(file);
-    if (err) panel.insertAdjacentHTML('afterbegin', `<p class="error">${esc(err)}</p>`);
+    if (err) panel.insertAdjacentHTML('afterbegin', `<div class="alert alert-error">${esc(err)}</div>`);
   });
 
   document.getElementById('hide-diff')?.addEventListener('click', () => {
@@ -300,20 +303,20 @@ function summary(missing: string[]): string {
     return acc;
   }, {});
 
-  const legend = `<ul class="legend">
-      <li><span class="swatch" style="background:#2e8b45"></span>added ${counts.A ?? 0}</li>
-      <li><span class="swatch" style="background:#e8a020"></span>modified ${(counts.M ?? 0) + (counts.R ?? 0)}</li>
-      <li><span class="swatch" style="background:#6b7fa8;opacity:.7"></span>related</li>
-    </ul>`;
+  const legend = `<div class="legend">
+      <span class="badge badge-sm badge-secondary">added ${counts.A ?? 0}</span>
+      <span class="badge badge-sm badge-accent">modified ${(counts.M ?? 0) + (counts.R ?? 0)}</span>
+      <span class="badge badge-sm badge-ghost">related</span>
+    </div>`;
 
   const deleted =
     missing.length > 0
-      ? `<h3>Deleted files <span class="count">${missing.length}</span></h3>
-         <p class="dim">Not on the compare branch, so they have no functions to draw.</p>
-         <ul>${missing.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
+      ? `<h3>Deleted files <span class="badge badge-sm badge-ghost">${missing.length}</span></h3>
+         <p class="path">Not on the compare branch, so they have no functions to draw.</p>
+         <ul class="list">${missing.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
       : '';
 
-  return `${legend}<p class="dim">Click a node for details.</p>${deleted}`;
+  return `${legend}<p class="path">Click a node for details.</p>${deleted}`;
 }
 
 /**
@@ -388,7 +391,7 @@ async function analyse() {
 
   if (!result.ok) {
     status.textContent = 'Nothing to show';
-    panel.innerHTML = `<p class="error">${esc(result.error)}</p>`;
+    panel.innerHTML = `<div class="alert alert-error">${esc(result.error)}</div>`;
     cy?.destroy();
     cy = null;
     graph = {};
@@ -418,7 +421,7 @@ openBtn.addEventListener('click', async () => {
   if ('error' in project) {
     // Nothing to diff without git, so stop here rather than run git on a non-repo.
     status.textContent = 'Nothing to show';
-    panel.innerHTML = `<p class="error">${esc(project.error)}</p><p class="dim">diffish compares two branches, so it needs a git repository.</p>`;
+    panel.innerHTML = `<div class="alert alert-error">${esc(project.error)}</div><p class="path">diffish compares two branches, so it needs a git repository.</p>`;
     cy?.destroy();
     cy = null;
     graph = {};

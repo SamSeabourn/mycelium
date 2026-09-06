@@ -17,6 +17,9 @@ importers:
       cytoscape-fcose:
         specifier: 2.2.0
         version: 2.2.0(cytoscape@3.34.2)
+      daisyui:
+        specifier: 5.7.28
+        version: 5.7.28
       madge:
         specifier: 8.0.0
         version: 8.0.0(typescript@7.0.2)
@@ -488,6 +491,9 @@ packages:
   cytoscape@3.34.2:
     resolution: {integrity: sha512-Cm2jaj1X/PBNlzV9yH8zcfGOxO7U+CJ/+mxSBVPSchLaugdp4jtlGx5qaHtPRZ6tgiZ5P+o1XoRfJA+ba6KM3g==}
     engines: {node: '>=0.10'}
+
+  daisyui@5.7.28:
+    resolution: {integrity: sha512-BxQap2QOj7NQy5nEsjTHRmybmUZP3t+O5G6vfdidZuptBsh/QyKN9wbdrGDZk198fMI3UyYnA/rCWlggZIhGnw==}
 
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
@@ -1258,6 +1264,8 @@ snapshots:
       cytoscape: 3.34.2
 
   cytoscape@3.34.2: {}
+
+  daisyui@5.7.28: {}
 
   debug@4.4.3:
     dependencies:

@@ -6,15 +6,17 @@
   "main": "dist/main.js",
   "scripts": {
     "esbuild": "node_modules/esbuild/bin/esbuild",
-    "build": "pnpm esbuild src/main.ts src/preload.ts src/scan.ts src/git.ts src/subgraph.ts src/functions.ts --bundle --platform=node --packages=external --outdir=dist && pnpm esbuild src/renderer.ts --bundle --outfile=dist/renderer.js && cp src/index.html dist/",
+    "build": "pnpm esbuild src/main.ts src/preload.ts src/scan.ts src/git.ts src/subgraph.ts src/functions.ts --bundle --platform=node --packages=external --outdir=dist && pnpm esbuild src/renderer.ts --bundle --outfile=dist/renderer.js && cp src/index.html dist/ && pnpm css",
     "start": "pnpm build && electron .",
     "check": "tsc --noEmit",
-    "test": "pnpm build && node --test test/*.test.js"
+    "test": "pnpm build && node --test test/*.test.js",
+    "css": "cat node_modules/daisyui/base/reset.css node_modules/daisyui/base/properties.css node_modules/daisyui/base/svg.css node_modules/daisyui/theme/retro.css node_modules/daisyui/components/button.css node_modules/daisyui/components/select.css node_modules/daisyui/components/input.css node_modules/daisyui/components/table.css node_modules/daisyui/components/badge.css node_modules/daisyui/components/card.css node_modules/daisyui/components/divider.css node_modules/daisyui/components/menu.css node_modules/daisyui/components/alert.css src/app.css > dist/app.css"
   },
   "dependencies": {
     "@babel/parser": "7.29.8",
     "cytoscape": "3.34.2",
     "cytoscape-fcose": "2.2.0",
+    "daisyui": "5.7.28",
     "madge": "8.0.0"
   },
   "devDependencies": {
