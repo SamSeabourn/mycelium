@@ -347,19 +347,28 @@ function showFile(id: string) {
 
   const pretty = (ids: string[]) => ids.map((i) => ({ name: label[i] ?? i, where: owner[i] }));
 
-  // Calls and callers first: they are the reason to have selected this node. The
-  // diff sits below, headed by the file and line range so it is still identifiable
-  // without a title of its own.
+  // Header first, on one line: status, file, and what is being compared. The diff
+  // follows, and the call relationships sit under it in their own card.
+  const head = `
+    <div class="head">
+      ${state}
+      <strong>${esc(file)}</strong>
+      ${
+        hasDiff || hasSource
+          ? `<span class="opacity-60">${hasDiff ? `${esc(baseSel.value)} … ${esc(compareSel.value)}` : esc(compareSel.value)}${span[id] ? ` · lines ${span[id][0]}-${span[id][1]}` : ''}</span>`
+          : ''
+      }
+    </div>`;
+
   panel.innerHTML = `
-    ${fileList('Calls', pretty(graph[id] ?? []))}
-    ${fileList('Called by', pretty(importersOf(id)))}
-    <div class="state">${state}</div>
-    ${
-      hasDiff || hasSource
-        ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="opacity-60">${hasDiff ? `${esc(baseSel.value)} … ${esc(compareSel.value)}` : esc(compareSel.value)}${span[id] ? ` · lines ${span[id][0]}-${span[id][1]}` : ''}</span></div>`
-        : ''
-    }
+    ${head}
     <div id="diff-body"></div>
+    <div class="card card-border refs">
+      <div class="card-body">
+        ${fileList('Calls', pretty(graph[id] ?? []))}
+        ${fileList('Called by', pretty(importersOf(id)))}
+      </div>
+    </div>
   `;
 
   // Clicking a changed node in the graph is the whole gesture — the diff opens

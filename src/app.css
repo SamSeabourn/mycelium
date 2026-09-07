@@ -113,10 +113,31 @@ body.resizing {
   margin: 0 0 4px;
   word-break: break-all;
 }
-#panel .state {
-  margin: 16px 0 4px;
+/* Status, file and comparison on one line at the top of the panel. */
+#panel .head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  font-size: 13px;
 }
-#panel h3:first-child {
+#panel .head strong {
+  font-size: 14px;
+  word-break: break-all;
+}
+
+/* Call relationships, boxed off below the code. */
+#panel .refs {
+  margin-top: 16px;
+  background: var(--color-base-200);
+  border-color: var(--edge-idle);
+}
+#panel .refs .card-body {
+  padding: 12px 14px;
+  gap: 0;
+}
+#panel .refs h3:first-child {
   margin-top: 0;
 }
 #panel h3 {
