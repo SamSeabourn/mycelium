@@ -143,6 +143,9 @@ let diffOpen = false;
  * cytoscape has no looping animation for a style property, so the dash offset is
  * stepped per frame. The loop stops as soon as nothing is selected rather than
  * burning a frame callback for the life of the app.
+ *
+ * Roughly 13px/s at 60fps — enough to read as alive without pulling the eye away
+ * from the code.
  */
 let antsFrame = 0;
 let antsOffset = 0;
@@ -153,7 +156,7 @@ function marchAnts() {
     antsFrame = 0;
     return;
   }
-  antsOffset -= 0.6;
+  antsOffset -= 0.22;
   selected.style('border-dash-offset', antsOffset);
   antsFrame = requestAnimationFrame(marchAnts);
 }
