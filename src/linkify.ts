@@ -8,6 +8,20 @@ const esc = (s: string) =>
 const colour = (t: LinkTarget) =>
   t.change === 'A' ? 'fn-added' : t.change ? 'fn-modified' : 'fn-plain';
 
+const STATUS: Record<string, string> = {
+  A: 'added',
+  M: 'modified',
+  D: 'deleted',
+  R: 'renamed',
+};
+
+/** Native title attribute — no component, no clipping inside the scrolling table. */
+const tip = (t: LinkTarget) => {
+  const status = t.change ? STATUS[t.change] : 'no changes';
+  const file = t.id.includes('#') ? t.id.slice(0, t.id.indexOf('#')) : t.id;
+  return `${status} · ${file}`;
+};
+
 /**
  * Wrap known function names in a line of code so they can be coloured and clicked.
  *
@@ -39,7 +53,9 @@ export function linkifyCode(text: string, targets: Map<string, LinkTarget>): str
     if (!/^\s*\(/.test(text.slice(m.index + m[0].length))) continue;
 
     out += esc(text.slice(last, m.index));
-    out += `<a class="fn-link ${colour(target)}" data-node="${esc(target.id)}">${esc(m[0])}</a>`;
+    out +=
+      `<a class="fn-link ${colour(target)}" data-node="${esc(target.id)}"` +
+      ` title="${esc(tip(target))}">${esc(m[0])}</a>`;
     last = m.index + m[0].length;
   }
 

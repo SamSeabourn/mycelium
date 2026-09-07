@@ -11,7 +11,8 @@ const targets = new Map([
 test('linkifyCode wraps a callee and colours it by its own status', () => {
   const html = linkifyCode('  const els = toElements(g);', targets);
 
-  assert.match(html, /<a class="fn-link fn-modified" data-node="src\/renderer\.ts#toElements">toElements<\/a>/);
+  assert.match(html, /<a class="fn-link fn-modified" data-node="src\/renderer\.ts#toElements"/);
+  assert.match(html, />toElements<\/a>/);
   assert.match(html, /const els = /, 'surrounding code survives');
 });
 
@@ -47,7 +48,8 @@ test('a target named like an HTML entity does not corrupt escaping', () => {
   const html = linkifyCode('a && amp(b)', entityish);
 
   assert.match(html, /a &amp;&amp; /, 'the && is still a valid entity pair');
-  assert.match(html, /data-node="x#amp">amp<\/a>/, 'the real call is still linked');
+  assert.match(html, /data-node="x#amp"/, 'the real call is still linked');
+  assert.match(html, />amp<\/a>/);
   assert.doesNotMatch(html, /&<a/, 'the entity was not split open');
 });
 
@@ -66,4 +68,16 @@ test('a call with a space before the paren still links', () => {
   const t = new Map([['esc', { id: 'x#esc' }]]);
 
   assert.match(linkifyCode('esc (text)', t), /fn-link/);
+});
+
+test('links carry a tooltip naming the status and file', () => {
+  const html = linkifyCode('toElements(g);', targets);
+
+  assert.match(html, /title="modified · src\/renderer\.ts"/);
+});
+
+test('an unchanged target says so rather than showing an empty status', () => {
+  const html = linkifyCode('esc(text);', targets);
+
+  assert.match(html, /title="no changes · src\/renderer\.ts"/);
 });
