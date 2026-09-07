@@ -130,3 +130,25 @@ export function sliceLines(text: string, from: number, to: number): SourceLine[]
   }
   return out;
 }
+
+/**
+ * Which sides a slice actually uses.
+ *
+ * An added function has no base-side span, so every row comes back with left blanked
+ * — rendering it side by side gives an empty column rather than no column. Decided
+ * from the rows rather than from the change status, so a modified function whose
+ * slice happens to be pure additions collapses too.
+ */
+export function sidesUsed(rows: DiffRow[]): { left: boolean; right: boolean } {
+  let left = false;
+  let right = false;
+
+  for (const row of rows) {
+    if (row.kind === 'gap') continue;
+    if (row.kind === 'context') return { left: true, right: true };
+    if (row.left !== null) left = true;
+    if (row.right !== null) right = true;
+  }
+
+  return { left, right };
+}

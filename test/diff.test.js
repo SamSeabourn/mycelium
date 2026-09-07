@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseUnified, sliceRows, sliceLines } = require('../dist/diff.js');
+const { parseUnified, sliceRows, sliceLines, sidesUsed } = require('../dist/diff.js');
 
 const unified = (...lines) => lines.join('\n');
 
@@ -120,4 +120,31 @@ test('sliceLines clamps to the file rather than emitting blanks', () => {
     { no: 1, text: 'one' },
     { no: 2, text: 'two' },
   ]);
+});
+
+test('sidesUsed reports one side for an added function', () => {
+  // What sliceRows returns with no base span: every left blanked.
+  const rows = [
+    { kind: 'change', leftNo: null, left: null, rightNo: 26, right: 'const flush = () => {' },
+    { kind: 'change', leftNo: null, left: null, rightNo: 27, right: '  dels = [];' },
+  ];
+
+  assert.deepEqual(sidesUsed(rows), { left: false, right: true });
+});
+
+test('sidesUsed reports both sides when there is any context', () => {
+  // Context exists on both sides, so a slice containing it is genuinely two-sided.
+  const rows = [
+    { kind: 'gap', text: 'x' },
+    { kind: 'context', leftNo: 10, rightNo: 10, text: 'keep' },
+    { kind: 'change', leftNo: null, left: null, rightNo: 11, right: 'new' },
+  ];
+
+  assert.deepEqual(sidesUsed(rows), { left: true, right: true });
+});
+
+test('sidesUsed reports both sides for a real edit', () => {
+  const rows = [{ kind: 'change', leftNo: 5, left: 'was', rightNo: 5, right: 'now' }];
+
+  assert.deepEqual(sidesUsed(rows), { left: true, right: true });
 });

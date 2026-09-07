@@ -6,6 +6,7 @@ import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
 import { linkifyElement, type LinkTarget } from './linkify';
 import { highlightLines } from './highlight';
+import { sidesUsed } from './diff';
 
 cytoscape.use(fcose);
 
@@ -293,6 +294,26 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
     );
   const left = side('left');
   const right = side('right');
+
+  const sides = sidesUsed(rows);
+
+  // One-sided slice (an added function, or a purely additive change): a single
+  // column, not a column of blanks next to the code.
+  if (!sides.left || !sides.right) {
+    const only: 'left' | 'right' = sides.right ? 'right' : 'left';
+    const lines = only === 'right' ? right : left;
+    const body = visible
+      .map((row, i) => {
+        const text = row.kind === 'context' ? row.text : only === 'right' ? row.right : row.left;
+        if (text === null) return '';
+        const no = only === 'right' ? row.rightNo : row.leftNo;
+        const cls = row.kind === 'context' ? '' : only === 'right' ? 'add' : 'del';
+        return `<tr class="${cls}"><td class="no">${no ?? ''}</td><td class="code ${only}">${lines[i] ?? ''}</td></tr>`;
+      })
+      .join('');
+    const cols = '<colgroup><col class="c-no" /><col class="c-code-full" /></colgroup>';
+    return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
+  }
 
   const cell = (no: number | null, html: string | null, side: 'left' | 'right') =>
     html === null
