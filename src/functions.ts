@@ -257,6 +257,24 @@ export function buildFunctionGraph(
   return { graph, label, file, ghosts, span };
 }
 
+/**
+ * Added or modified, judged by the function rather than by its file.
+ *
+ * Inheriting the file's status labels every new function inside an edited file as
+ * "modified", which promises a before/after that never existed — the diff comes back
+ * all additions and looks broken.
+ */
+export function functionStatus(
+  fnName: string,
+  fileStatus: 'A' | 'M' | 'D' | 'R' | undefined,
+  baseNames: Set<string> | undefined,
+): 'A' | 'M' {
+  if (fileStatus === 'A') return 'A'; // the whole file is new
+  // Base side unreadable: assume an edit rather than relabelling everything as new.
+  if (!baseNames) return 'M';
+  return baseNames.has(fnName) ? 'M' : 'A';
+}
+
 /** A function counts as changed when a changed line falls inside its span. */
 export function markChangedFunctions(
   defs: FnDef[],

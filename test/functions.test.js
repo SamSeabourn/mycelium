@@ -5,6 +5,7 @@ const {
   resolveImport,
   buildFunctionGraph,
   markChangedFunctions,
+  functionStatus,
 } = require('../dist/functions.js');
 const { parseHunks } = require('../dist/git.js');
 
@@ -119,4 +120,21 @@ test('parseHunks reads the compare-side line ranges', () => {
   ].join('\n');
 
   assert.deepEqual(parseHunks(diff), { 'src/a.ts': [[13, 16], [45, 45]] });
+});
+
+test('functionStatus reports a new function in an edited file as added', () => {
+  // The case that looked broken: the file is 'M', but this function is not in it yet.
+  const base = new Set(['parseNameStatus', 'branches']);
+
+  assert.equal(functionStatus('fileDiff', 'M', base), 'A');
+  assert.equal(functionStatus('parseNameStatus', 'M', base), 'M');
+});
+
+test('functionStatus treats everything in a new file as added', () => {
+  assert.equal(functionStatus('anything', 'A', undefined), 'A');
+});
+
+test('functionStatus falls back to modified when the base side is unreadable', () => {
+  // Must not relabel every function as added just because git show failed.
+  assert.equal(functionStatus('whatever', 'M', undefined), 'M');
 });

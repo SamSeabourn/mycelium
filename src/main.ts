@@ -7,12 +7,20 @@ import {
   changedFiles,
   changedLines,
   fileDiff,
+  mergeBase,
+  showFile,
   withBranchCheckout,
   type ChangeStatus,
 } from './git';
 import type { DiffRow } from './diff';
 import { HOPS, withinHops } from './subgraph';
-import { buildFunctionGraph, markChangedFunctions, parseFile, type FnDef } from './functions';
+import {
+  buildFunctionGraph,
+  functionStatus,
+  markChangedFunctions,
+  parseFile,
+  type FnDef,
+} from './functions';
 
 export type Project =
   | { ok: true; root: string; branches: string[]; current: string; base: string }
@@ -101,6 +109,8 @@ ipcMain.handle(
     const lines = await changedLines(projectRoot, opts.base, opts.compare);
     if (!lines.ok) return lines;
 
+    const since = await mergeBase(projectRoot, opts.base, opts.compare);
+
     // Everything needing the compare branch on disk happens in here, so the throwaway
     // worktree is still around when the parser reads files.
     const work = async (dir: string): Promise<Analysis> => {
@@ -144,11 +154,21 @@ ipcMain.handle(
       }
       const touched = new Set(markChangedFunctions(defs, lines.lines));
 
+      // Which functions existed before, so a new function inside an edited file is
+      // reported as added rather than inheriting the file's "modified".
+      const baseNames: Record<string, Set<string>> = {};
+      for (const f of seeds) {
+        const before = await showFile(projectRoot, since, f);
+        if (before !== null) baseNames[f] = new Set(parseFile(f, before).defs.map((d) => d.name));
+      }
+
       const fnChanged: Record<string, ChangeStatus> = {};
       const fnHop: Record<string, number> = {};
       for (const id of Object.keys(fns.graph)) {
         const owner = fns.file[id];
-        if (touched.has(id)) fnChanged[id] = changed[owner] === 'A' ? 'A' : 'M';
+        if (touched.has(id)) {
+          fnChanged[id] = functionStatus(fns.label[id], changed[owner], baseNames[owner]);
+        }
         fnHop[id] = distance.get(owner) ?? HOPS;
       }
 

@@ -113,6 +113,30 @@ export async function fileDiff(
   }
 }
 
+/**
+ * The commit the diff is actually measured from.
+ *
+ * `git diff base...compare` compares merge-base to compare, so anything landing on
+ * `base` after the branch diverged is not in the diff. Reading the base side at the
+ * branch tip instead would show functions the diff never mentioned.
+ */
+export async function mergeBase(root: string, base: string, compare: string): Promise<string> {
+  try {
+    return (await git(root, ['merge-base', base, compare])).trim();
+  } catch {
+    return base; // unrelated histories; the tip is the best answer available
+  }
+}
+
+/** File contents at a ref, or null when the file does not exist there. */
+export async function showFile(root: string, ref: string, file: string): Promise<string | null> {
+  try {
+    return await git(root, ['show', `${ref}:${file}`]);
+  } catch {
+    return null; // a file added on the compare branch is absent here, not an error
+  }
+}
+
 export async function branches(root: string): Promise<GitResult<{ all: string[]; current: string }>> {
   try {
     const all = (await git(root, ['branch', '--format=%(refname:short)']))
