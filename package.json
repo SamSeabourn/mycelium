@@ -10,7 +10,7 @@
     "start": "pnpm build && electron .",
     "check": "tsc --noEmit",
     "test": "pnpm build && node --test test/*.test.js",
-    "css": "cat node_modules/daisyui/base/reset.css node_modules/daisyui/base/properties.css node_modules/daisyui/base/svg.css node_modules/daisyui/theme/coffee.css node_modules/daisyui/components/button.css node_modules/daisyui/components/select.css node_modules/daisyui/components/input.css node_modules/daisyui/components/table.css node_modules/daisyui/components/badge.css node_modules/daisyui/components/card.css node_modules/daisyui/components/divider.css node_modules/daisyui/components/menu.css node_modules/daisyui/components/alert.css src/app.css > dist/app.css"
+    "css": "cat node_modules/daisyui/base/reset.css node_modules/daisyui/base/properties.css node_modules/daisyui/base/svg.css node_modules/daisyui/theme/black.css node_modules/daisyui/components/button.css node_modules/daisyui/components/select.css node_modules/daisyui/components/input.css node_modules/daisyui/components/table.css node_modules/daisyui/components/badge.css node_modules/daisyui/components/card.css node_modules/daisyui/components/divider.css node_modules/daisyui/components/menu.css node_modules/daisyui/components/alert.css src/app.css > dist/app.css"
   },
   "dependencies": {
     "@babel/parser": "7.29.8",

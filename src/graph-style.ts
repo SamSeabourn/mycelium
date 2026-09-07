@@ -14,7 +14,7 @@ export function graphStyle(): StylesheetJson {
   // Same two vars app.css uses, so badges, diff rows, links and nodes stay in step.
   const added = themeColor('--diff-added');
   const modified = themeColor('--diff-modified');
-  const selected = themeColor('--color-primary');
+  const selected = themeColor('--pick');
   const ink = themeColor('--color-base-content');
   const idle = themeColor('--node-idle');
   const muted = themeColor('--edge-idle');
