@@ -6,7 +6,7 @@
   "main": "dist/main.js",
   "scripts": {
     "esbuild": "node_modules/esbuild/bin/esbuild",
-    "build": "pnpm esbuild src/main.ts src/preload.ts src/scan.ts src/git.ts src/subgraph.ts src/functions.ts src/diff.ts --bundle --platform=node --packages=external --outdir=dist && pnpm esbuild src/renderer.ts --bundle --outfile=dist/renderer.js && cp src/index.html dist/ && pnpm css",
+    "build": "pnpm esbuild src/main.ts src/preload.ts src/scan.ts src/git.ts src/subgraph.ts src/functions.ts src/diff.ts src/linkify.ts --bundle --platform=node --packages=external --outdir=dist && pnpm esbuild src/renderer.ts --bundle --outfile=dist/renderer.js && cp src/index.html dist/ && pnpm css",
     "start": "pnpm build && electron .",
     "check": "tsc --noEmit",
     "test": "pnpm build && node --test test/*.test.js",

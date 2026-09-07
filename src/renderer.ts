@@ -4,6 +4,7 @@ import type { Analysis, FileDiff, Project } from './main';
 import type { ChangeStatus } from './git';
 import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
+import { linkifyCode, type LinkTarget } from './linkify';
 
 cytoscape.use(fcose);
 
@@ -140,6 +141,24 @@ function setWide(on: boolean) {
   cy?.resize();
 }
 
+// Delegated: the panel's innerHTML is rebuilt on every selection, so a listener bound
+// to the links themselves would die with the markup that created it.
+panel.addEventListener('click', (e) => {
+  const link = (e.target as HTMLElement).closest<HTMLElement>('.fn-link');
+  const target = link?.dataset.node;
+  if (!target || !cy) return;
+
+  const node = cy.$id(target);
+  if (node.empty()) return;
+
+  cy.elements().unselect();
+  node.select();
+  // Centre it — the target is often off-screen, and without this the graph looks
+  // like nothing happened.
+  cy.animate({ center: { eles: node }, duration: 200 });
+  showFile(target);
+});
+
 // Drag the divider to size the panel. Pointer capture keeps the events coming even
 // when the cursor outruns the 5px strip.
 const divider = document.getElementById('divider') as HTMLElement;
@@ -195,11 +214,39 @@ divider.addEventListener('dblclick', () => {
   cy?.resize();
 });
 
-function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
+/**
+ * Names this function calls, keyed by the name as it appears at the call site. Taken
+ * from the resolved call graph rather than guessed from the text, so `const` and
+ * local variables never become links.
+ */
+function linkTargets(id: string): Map<string, LinkTarget> {
+  const targets = new Map<string, LinkTarget>();
+
+  for (const callee of graph[id] ?? []) {
+    const name = label[callee] ?? callee;
+    // A method label is "Class.method"; the call site says `method`.
+    const bare = name.includes('.') ? name.slice(name.indexOf('.') + 1) : name;
+    targets.set(bare, { id: callee, change: changed[callee] });
+  }
+
+  const own = label[id];
+  if (own) {
+    const bare = own.includes('.') ? own.slice(own.indexOf('.') + 1) : own;
+    // Coloured but not a link — clicking to where you already are is a dead control.
+    if (!targets.has(bare)) targets.set(bare, { id, change: changed[id], self: true });
+  }
+
+  return targets;
+}
+
+function diffTable(rows: Extract<FileDiff, { ok: true }>['rows'], id: string): string {
+  const targets = linkTargets(id);
+  const code = (text: string) => linkifyCode(text, targets);
+
   const cell = (no: number | null, text: string | null, side: 'left' | 'right') =>
     text === null
       ? `<td class="no"></td><td class="code ${side} blank"></td>`
-      : `<td class="no">${no ?? ''}</td><td class="code ${side}">${esc(text)}</td>`;
+      : `<td class="no">${no ?? ''}</td><td class="code ${side}">${code(text)}</td>`;
 
   const body = rows
     .map((row) => {
@@ -243,7 +290,7 @@ async function showDiff(id: string) {
   host.innerHTML =
     result.rows.length === 0
       ? '<p class="path">No changes inside this function between the selected branches.</p>'
-      : diffTable(result.rows);
+      : diffTable(result.rows, id);
 }
 
 function showGhost(id: string) {
