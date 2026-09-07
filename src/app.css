@@ -4,6 +4,21 @@
  * regardless of specificity, so anything here silently wins over the theme.
  */
 
+/* Git status colours, deliberately louder than the theme's own success/warning —
+   coffee ships --color-success at chroma 0.072, which reads as olive. One pair of
+   vars so the graph canvas and the CSS cannot drift apart. */
+:root {
+  --diff-added: oklch(82% 0.25 145);
+  --diff-modified: oklch(84% 0.19 82);
+  --diff-removed: oklch(67% 0.25 26);
+
+  /* Graph furniture. Mixing toward the text colour rather than using base-300 keeps
+     these visible on dark themes too — coffee's base-300 is *darker* than base-100,
+     which made unchanged nodes disappear into the background. */
+  --node-idle: color-mix(in oklab, var(--color-base-content) 30%, var(--color-base-100));
+  --edge-idle: color-mix(in oklab, var(--color-base-content) 25%, var(--color-base-100));
+}
+
 html,
 body {
   height: 100%;
@@ -179,10 +194,10 @@ td.no {
   border-right: 1px solid var(--color-base-300);
 }
 tr.del td.code.left {
-  background: color-mix(in oklab, var(--color-error) 18%, var(--color-base-100));
+  background: color-mix(in oklab, var(--diff-removed) 26%, var(--color-base-100));
 }
 tr.add td.code.right {
-  background: color-mix(in oklab, var(--color-success) 18%, var(--color-base-100));
+  background: color-mix(in oklab, var(--diff-added) 22%, var(--color-base-100));
 }
 /* The empty half of a pair — shaded so the eye reads it as "nothing here" rather
    than as an unstyled gap. */
@@ -205,10 +220,10 @@ td.blank {
   text-decoration: underline solid;
 }
 .fn-added {
-  color: color-mix(in oklab, var(--color-success) 75%, var(--color-base-content));
+  color: var(--diff-added);
 }
 .fn-modified {
-  color: color-mix(in oklab, var(--color-warning) 70%, var(--color-base-content));
+  color: var(--diff-modified);
 }
 .fn-plain {
   color: var(--color-primary);
@@ -227,4 +242,17 @@ header .select {
 }
 header .input {
   width: 14rem;
+}
+
+/* DaisyUI's own success/warning are the muted theme colours; the status badges
+   should match the graph, so they take the vibrant pair too. */
+.badge-success {
+  background: var(--diff-added);
+  border-color: var(--diff-added);
+  color: oklch(20% 0.03 145);
+}
+.badge-warning {
+  background: var(--diff-modified);
+  border-color: var(--diff-modified);
+  color: oklch(22% 0.03 82);
 }

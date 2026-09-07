@@ -11,11 +11,13 @@ export function graphStyle(): StylesheetJson {
   // Standard git/diff convention: green added, amber modified, red deleted. Using
   // the semantic theme slots rather than accent/secondary keeps that meaning intact
   // whichever DaisyUI theme is set.
-  const added = themeColor('--color-success');
-  const modified = themeColor('--color-warning');
+  // Same two vars app.css uses, so badges, diff rows, links and nodes stay in step.
+  const added = themeColor('--diff-added');
+  const modified = themeColor('--diff-modified');
   const selected = themeColor('--color-primary');
   const ink = themeColor('--color-base-content');
-  const muted = themeColor('--color-base-300');
+  const idle = themeColor('--node-idle');
+  const muted = themeColor('--edge-idle');
 
   return [
     {
@@ -25,7 +27,7 @@ export function graphStyle(): StylesheetJson {
         // Unchanged functions are context, so they sit back as plain grey discs.
         // --color-neutral is near-black in most themes, which made them read as
         // loudly as the changed ones.
-        'background-color': muted,
+        'background-color': idle,
         'border-color': ink,
         'border-opacity': 0.25,
         'border-width': 1.2,
