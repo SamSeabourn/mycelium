@@ -142,6 +142,44 @@ function setWide(on: boolean) {
   cy?.resize();
 }
 
+/**
+ * Hover tooltip for diff links.
+ *
+ * A floating element on <body> rather than DaisyUI's tooltip or a ::before, because
+ * both of those are drawn inside the link — and the link lives in `.diff-scroll`,
+ * which clips on overflow. The native `title` attribute works but only after about a
+ * second of motionless hover, which reads as "no tooltip".
+ */
+const tip = document.createElement('div');
+tip.id = 'tip';
+tip.hidden = true;
+document.body.appendChild(tip);
+
+const placeTip = (e: MouseEvent) => {
+  const pad = 12;
+  const x = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - pad);
+  const y = Math.max(e.clientY - tip.offsetHeight - 10, pad);
+  tip.style.left = `${x}px`;
+  tip.style.top = `${y}px`;
+};
+
+panel.addEventListener('mouseover', (e) => {
+  const link = (e.target as HTMLElement).closest<HTMLElement>('.fn-link');
+  if (!link?.dataset.tip) return;
+  tip.textContent = link.dataset.tip;
+  tip.hidden = false;
+  placeTip(e);
+});
+
+panel.addEventListener('mousemove', (e) => {
+  if (!tip.hidden) placeTip(e);
+});
+
+panel.addEventListener('mouseout', (e) => {
+  const to = (e.relatedTarget as HTMLElement | null)?.closest?.('.fn-link');
+  if (!to) tip.hidden = true;
+});
+
 // Delegated: the panel's innerHTML is rebuilt on every selection, so a listener bound
 // to the links themselves would die with the markup that created it.
 panel.addEventListener('click', (e) => {

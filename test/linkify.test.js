@@ -70,14 +70,14 @@ test('a call with a space before the paren still links', () => {
   assert.match(linkifyCode('esc (text)', t), /fn-link/);
 });
 
-test('links carry a tooltip naming the status and file', () => {
+test('links carry tooltip text naming the status and file', () => {
   const html = linkifyCode('toElements(g);', targets);
 
-  assert.match(html, /title="modified · src\/renderer\.ts"/);
+  assert.match(html, /data-tip="modified · src\/renderer\.ts"/);
 });
 
 test('an unchanged target says so rather than showing an empty status', () => {
   const html = linkifyCode('esc(text);', targets);
 
-  assert.match(html, /title="no changes · src\/renderer\.ts"/);
+  assert.match(html, /data-tip="no changes · src\/renderer\.ts"/);
 });

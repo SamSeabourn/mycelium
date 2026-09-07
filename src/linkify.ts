@@ -15,7 +15,7 @@ const STATUS: Record<string, string> = {
   R: 'renamed',
 };
 
-/** Native title attribute — no component, no clipping inside the scrolling table. */
+/** Text for the hover tooltip the renderer draws. */
 const tip = (t: LinkTarget) => {
   const status = t.change ? STATUS[t.change] : 'no changes';
   const file = t.id.includes('#') ? t.id.slice(0, t.id.indexOf('#')) : t.id;
@@ -55,7 +55,7 @@ export function linkifyCode(text: string, targets: Map<string, LinkTarget>): str
     out += esc(text.slice(last, m.index));
     out +=
       `<a class="fn-link ${colour(target)}" data-node="${esc(target.id)}"` +
-      ` title="${esc(tip(target))}">${esc(m[0])}</a>`;
+      ` data-tip="${esc(tip(target))}">${esc(m[0])}</a>`;
     last = m.index + m[0].length;
   }
 

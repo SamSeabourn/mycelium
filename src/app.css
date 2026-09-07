@@ -257,6 +257,20 @@ td.blank {
   color: var(--pick);
 }
 
+#tip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  padding: 4px 8px;
+  font-size: 12px;
+  background: var(--color-base-300);
+  color: var(--color-base-content);
+  border: 1px solid var(--edge-idle);
+  border-radius: var(--radius-field);
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 45%);
+}
+
 /* Two things Tailwind would have given us; we are not shipping Tailwind, so they are
    defined here rather than left as dead class names in the markup. */
 .opacity-50 { opacity: 0.5; }
