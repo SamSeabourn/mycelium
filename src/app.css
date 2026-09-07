@@ -217,11 +217,8 @@ td.blank {
 
 /* Function names inside the diff: coloured by the callee's git status, clickable
    through to that node. Weight carries them over the tinted add/del backgrounds. */
-.fn-link,
-.fn-self {
-  font-weight: 600;
-}
 .fn-link {
+  font-weight: 600;
   cursor: pointer;
   text-decoration: underline dotted;
   text-underline-offset: 2px;

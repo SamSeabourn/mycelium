@@ -66,8 +66,13 @@ export function graphStyle(): StylesheetJson {
       style: {
         width: 1.3,
         'line-color': muted,
-        'target-arrow-color': muted,
-        'target-arrow-shape': 'triangle',
+        // The head sits at the SOURCE end. Edges run caller -> callee in the data,
+        // so drawing the head at the caller reads as "this is used in there" rather
+        // than "this calls that". Flipping the arrow rather than the edge keeps
+        // graph[id] meaning callees, which Calls / Called by rely on.
+        'source-arrow-color': muted,
+        'source-arrow-shape': 'triangle',
+        'target-arrow-shape': 'none',
         'arrow-scale': 0.75,
         // A per-edge bend keeps edges between the same pair from stacking their
         // arrowheads on top of each other.
@@ -80,7 +85,7 @@ export function graphStyle(): StylesheetJson {
     // caller changed — a ghost is by definition something we are not showing.
     {
       selector: 'edge[direct = "1"]',
-      style: { 'line-color': strong, 'target-arrow-color': strong, width: 1.5, 'arrow-scale': 0.7 },
+      style: { 'line-color': strong, 'source-arrow-color': strong, width: 1.5, 'arrow-scale': 0.7 },
     },
     // Ghosts: calls into files outside the hop window. Deliberately faint and dashed
     // so they read as "there is more here" rather than as part of the diff.
@@ -104,6 +109,7 @@ export function graphStyle(): StylesheetJson {
         width: 1,
         'line-style': 'dashed',
         'line-color': muted,
+        'source-arrow-shape': 'none',
         'target-arrow-shape': 'none',
         'curve-style': 'straight',
       },

@@ -51,13 +51,6 @@ test('a target named like an HTML entity does not corrupt escaping', () => {
   assert.doesNotMatch(html, /&<a/, 'the entity was not split open');
 });
 
-test('the function itself is coloured but not a link', () => {
-  const self = new Map([['render', { id: 'src/renderer.ts#render', change: 'M', self: true }]]);
-  const html = linkifyCode('function render(result) {', self);
-
-  assert.match(html, /<span class="fn-self fn-modified">render<\/span>/);
-  assert.doesNotMatch(html, /fn-link/);
-});
 
 test('only call sites link, not mentions in strings or comments', () => {
   // Real line from git.ts: `git` appears in a regex and a string as well as being a

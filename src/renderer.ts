@@ -230,13 +230,8 @@ function linkTargets(id: string): Map<string, LinkTarget> {
     targets.set(bare, { id: callee, change: changed[callee] });
   }
 
-  const own = label[id];
-  if (own) {
-    const bare = own.includes('.') ? own.slice(own.indexOf('.') + 1) : own;
-    // Coloured but not a link — clicking to where you already are is a dead control.
-    if (!targets.has(bare)) targets.set(bare, { id, change: changed[id], self: true });
-  }
-
+  // The function's own name is deliberately left plain: colouring it made the
+  // signature look like a link to somewhere, when it is where you already are.
   return targets;
 }
 

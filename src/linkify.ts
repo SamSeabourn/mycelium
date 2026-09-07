@@ -1,4 +1,4 @@
-export type LinkTarget = { id: string; change?: 'A' | 'M' | 'D' | 'R'; self?: boolean };
+export type LinkTarget = { id: string; change?: 'A' | 'M' | 'D' | 'R' };
 
 const IDENT = /[A-Za-z_$][\w$]*/g;
 
@@ -39,9 +39,7 @@ export function linkifyCode(text: string, targets: Map<string, LinkTarget>): str
     if (!/^\s*\(/.test(text.slice(m.index + m[0].length))) continue;
 
     out += esc(text.slice(last, m.index));
-    out += target.self
-      ? `<span class="fn-self ${colour(target)}">${esc(m[0])}</span>`
-      : `<a class="fn-link ${colour(target)}" data-node="${esc(target.id)}">${esc(m[0])}</a>`;
+    out += `<a class="fn-link ${colour(target)}" data-node="${esc(target.id)}">${esc(m[0])}</a>`;
     last = m.index + m[0].length;
   }
 
