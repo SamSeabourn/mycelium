@@ -318,6 +318,42 @@ td.blank {
   font-weight: 600;
   box-shadow: 0 2px 8px rgb(0 0 0 / 45%);
 }
+/* Reference rows in the card: a status tag, the name, then where it lives. Same
+   look as the hover tooltip so the two read as one vocabulary. */
+.ref {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+}
+.ref:hover .ref-name {
+  text-decoration: underline;
+}
+.ref-name {
+  font-weight: 600;
+}
+.tag {
+  flex: none;
+  border: 1px solid;
+  border-radius: var(--radius-field);
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tag-added {
+  border-color: var(--diff-added);
+  color: var(--diff-added);
+}
+.tag-modified {
+  border-color: var(--diff-modified);
+  color: var(--diff-modified);
+}
+.tag-plain {
+  border-color: var(--pick);
+  color: var(--pick);
+}
+
 #tip.tip-added {
   border-color: var(--diff-added);
   color: var(--diff-added);

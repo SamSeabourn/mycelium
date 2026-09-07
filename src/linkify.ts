@@ -15,8 +15,14 @@ const STATUS: Record<string, string> = {
   R: '\u2192 renamed',
 };
 
-/** Text for the hover tooltip the renderer draws. */
-const tip = (t: LinkTarget) => (t.change ? STATUS[t.change] : 'no changes');
+/** Glyph plus word for a status — the hover tooltip and the reference tags share it. */
+export const statusLabel = (t: LinkTarget) => (t.change ? STATUS[t.change] : 'no changes');
+
+const tip = statusLabel;
+
+/** Class suffix for the status colour, shared by tooltips, tags and links. */
+export const statusClass = (change?: 'A' | 'M' | 'D' | 'R') =>
+  change === 'A' ? 'added' : change ? 'modified' : 'plain';
 
 /**
  * Wrap known function names in a line of code so they can be coloured and clicked.

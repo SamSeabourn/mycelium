@@ -4,7 +4,7 @@ import type { Analysis, FileDiff, Project, Source } from './main';
 import type { ChangeStatus } from './git';
 import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
-import { linkifyElement, type LinkTarget } from './linkify';
+import { linkifyElement, statusClass, statusLabel, type LinkTarget } from './linkify';
 import { highlightLines } from './highlight';
 import { sidesUsed } from './diff';
 
@@ -126,12 +126,23 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
   return [...nodes, ...edges, ...ghostElements()];
 }
 
-function fileList(title: string, entries: { name: string; where?: string }[]): string {
+type Ref = { id: string; name: string; where?: string; change?: ChangeStatus };
+
+function fileList(title: string, entries: Ref[]): string {
   const count = `<span class="badge badge-sm badge-ghost">${entries.length}</span>`;
   if (entries.length === 0) return `<h3>${title} ${count}</h3><p class="path">none</p>`;
+
   const items = entries
-    .map((e) => `<li>${esc(e.name)}${e.where ? `<span class="where">${esc(e.where)}</span>` : ''}</li>`)
+    .map(
+      (e) =>
+        `<li><a class="ref" data-node="${esc(e.id)}">` +
+        `<span class="tag tag-${statusClass(e.change)}">${esc(statusLabel({ id: e.id, change: e.change }))}</span>` +
+        `<span class="ref-name">${esc(e.name)}</span>` +
+        (e.where ? `<span class="where">${esc(e.where)}</span>` : '') +
+        `</a></li>`,
+    )
     .join('');
+
   return `<h3>${title} ${count}</h3><ul class="list">${items}</ul>`;
 }
 
@@ -227,7 +238,7 @@ panel.addEventListener('mouseout', (e) => {
 // Delegated: the panel's innerHTML is rebuilt on every selection, so a listener bound
 // to the links themselves would die with the markup that created it.
 panel.addEventListener('click', (e) => {
-  const link = (e.target as HTMLElement).closest<HTMLElement>('.fn-link');
+  const link = (e.target as HTMLElement).closest<HTMLElement>('[data-node]');
   const target = link?.dataset.node;
   if (!target || !cy) return;
 
@@ -462,7 +473,8 @@ function showFile(id: string) {
   const hasSource = !hasDiff && span[id] !== undefined;
   const file = fileOf(id);
 
-  const pretty = (ids: string[]) => ids.map((i) => ({ name: label[i] ?? i, where: owner[i] }));
+  const pretty = (ids: string[]): Ref[] =>
+    ids.map((i) => ({ id: i, name: label[i] ?? i, where: owner[i], change: changed[i] }));
 
   // Header first, on one line: status, file, and what is being compared. The diff
   // follows, and the call relationships sit under it in their own card.
@@ -482,7 +494,7 @@ function showFile(id: string) {
     <div id="diff-body"></div>
     <div class="card card-border refs">
       <div class="card-body">
-        ${fileList('Internally calls', pretty(graph[id] ?? []))}
+        ${fileList('Calls Internally', pretty(graph[id] ?? []))}
         ${fileList('Callsites', pretty(importersOf(id)))}
       </div>
     </div>
