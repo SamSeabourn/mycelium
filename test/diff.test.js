@@ -132,15 +132,17 @@ test('sidesUsed reports one side for an added function', () => {
   assert.deepEqual(sidesUsed(rows), { left: false, right: true });
 });
 
-test('sidesUsed reports both sides when there is any context', () => {
-  // Context exists on both sides, so a slice containing it is genuinely two-sided.
+test('sidesUsed ignores context when deciding the sides', () => {
+  // An added function's span often contains a shared blank line or closing brace.
+  // Counting those as a left side forced split view on functions that have no
+  // before-version at all.
   const rows = [
     { kind: 'gap', text: 'x' },
-    { kind: 'context', leftNo: 10, rightNo: 10, text: 'keep' },
-    { kind: 'change', leftNo: null, left: null, rightNo: 11, right: 'new' },
+    { kind: 'context', leftNo: 101, rightNo: 121, text: '' },
+    { kind: 'change', leftNo: null, left: null, rightNo: 122, right: 'new' },
   ];
 
-  assert.deepEqual(sidesUsed(rows), { left: true, right: true });
+  assert.deepEqual(sidesUsed(rows), { left: false, right: true });
 });
 
 test('sidesUsed reports both sides for a real edit', () => {

@@ -300,7 +300,8 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
   // One-sided slice (an added function, or a purely additive change): a single
   // column, not a column of blanks next to the code.
   if (!sides.left || !sides.right) {
-    const only: 'left' | 'right' = sides.right ? 'right' : 'left';
+    // Removals only means show the old side; anything else shows the compare side.
+    const only: 'left' | 'right' = sides.left && !sides.right ? 'left' : 'right';
     const lines = only === 'right' ? right : left;
     const body = visible
       .map((row, i) => {
