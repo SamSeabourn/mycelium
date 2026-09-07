@@ -118,3 +118,15 @@ export function sliceRows(
 
   return out;
 }
+
+export type SourceLine = { no: number; text: string };
+
+/** Lines `from`..`to` of a file, 1-based and inclusive. */
+export function sliceLines(text: string, from: number, to: number): SourceLine[] {
+  const lines = text.split('\n');
+  const out: SourceLine[] = [];
+  for (let n = Math.max(1, from); n <= Math.min(lines.length, to); n++) {
+    out.push({ no: n, text: lines[n - 1] });
+  }
+  return out;
+}

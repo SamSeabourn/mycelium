@@ -58,3 +58,19 @@ test('the function itself is coloured but not a link', () => {
   assert.match(html, /<span class="fn-self fn-modified">render<\/span>/);
   assert.doesNotMatch(html, /fn-link/);
 });
+
+test('only call sites link, not mentions in strings or comments', () => {
+  // Real line from git.ts: `git` appears in a regex and a string as well as being a
+  // function. Only a call — none here — should link.
+  const t = new Map([['git', { id: 'src/git.ts#git' }]]);
+  const prose = "error: /not a git repository/i.test(text) ? 'Not a git repository' : text,";
+
+  assert.doesNotMatch(linkifyCode(prose, t), /fn-link/);
+  assert.match(linkifyCode('const all = await git(root, args);', t), /fn-link/);
+});
+
+test('a call with a space before the paren still links', () => {
+  const t = new Map([['esc', { id: 'x#esc' }]]);
+
+  assert.match(linkifyCode('esc (text)', t), /fn-link/);
+});

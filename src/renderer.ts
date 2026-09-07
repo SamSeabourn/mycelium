@@ -1,6 +1,6 @@
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
-import type { Analysis, FileDiff, Project } from './main';
+import type { Analysis, FileDiff, Project, Source } from './main';
 import type { ChangeStatus } from './git';
 import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
@@ -20,6 +20,7 @@ declare global {
         range?: [number, number];
         baseRange?: [number, number];
       }): Promise<FileDiff>;
+      source(opts: { compare: string; file: string; range: [number, number] }): Promise<Source>;
       openFile(relative: string): Promise<string>;
     };
   }
@@ -267,6 +268,35 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows'], id: string): s
   return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
 }
 
+/** The function's body, for a node with no diff. Same link treatment as a diff. */
+async function showSource(id: string) {
+  const host = document.getElementById('diff-body');
+  const range = span[id];
+  if (!host || !range) return;
+
+  host.innerHTML = '<p class="path">Loading…</p>';
+  const result = await window.diffish.source({
+    compare: compareSel.value,
+    file: fileOf(id),
+    range,
+  });
+
+  if (!result.ok) {
+    host.innerHTML = `<div class="alert alert-error">${esc(result.error)}</div>`;
+    return;
+  }
+
+  const targets = linkTargets(id);
+  const body = result.lines
+    .map(
+      (l) =>
+        `<tr><td class="no">${l.no}</td><td class="code">${linkifyCode(l.text, targets)}</td></tr>`,
+    )
+    .join('');
+  const cols = '<colgroup><col class="c-no" /><col class="c-code-full" /></colgroup>';
+  host.innerHTML = `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
+}
+
 async function showDiff(id: string) {
   const host = document.getElementById('diff-body');
   if (!host) return;
@@ -313,9 +343,11 @@ function showFile(id: string) {
 
   const state = changed[id]
     ? `<span class="badge badge-sm ${changed[id] === 'A' ? 'badge-success' : 'badge-warning'}">${CHANGE_LABEL[changed[id]]}</span>`
-    : `<span class="badge badge-sm badge-ghost">unchanged · ${hop[id] ?? 0} hop(s) away</span>`;
+    : '<span class="badge badge-sm badge-ghost">no changes</span>';
 
   const hasDiff = changed[id] !== undefined;
+  // With no diff there is still a body worth reading, so the panel shows the source.
+  const hasSource = !hasDiff && span[id] !== undefined;
   const file = fileOf(id);
 
   const pretty = (ids: string[]) => ids.map((i) => ({ name: label[i] ?? i, where: owner[i] }));
@@ -327,7 +359,11 @@ function showFile(id: string) {
     ${fileList('Calls', pretty(graph[id] ?? []))}
     ${fileList('Called by', pretty(importersOf(id)))}
     <div class="state">${state}</div>
-    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="opacity-60">${esc(baseSel.value)} … ${esc(compareSel.value)}${span[id] ? ` · lines ${span[id][0]}-${span[id][1]}` : ''}</span></div>` : ''}
+    ${
+      hasDiff || hasSource
+        ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="opacity-60">${hasDiff ? `${esc(baseSel.value)} … ${esc(compareSel.value)}` : esc(compareSel.value)}${span[id] ? ` · lines ${span[id][0]}-${span[id][1]}` : ''}</span></div>`
+        : ''
+    }
     <div id="diff-body"></div>
   `;
 
@@ -336,6 +372,9 @@ function showFile(id: string) {
   if (hasDiff) {
     setWide(true);
     void showDiff(id);
+  } else if (hasSource) {
+    setWide(true);
+    void showSource(id);
   } else if (diffOpen) {
     setWide(false);
   }

@@ -12,7 +12,7 @@ import {
   withBranchCheckout,
   type ChangeStatus,
 } from './git';
-import type { DiffRow } from './diff';
+import { sliceLines, type DiffRow, type SourceLine } from './diff';
 import { HOPS, withinHops } from './subgraph';
 import {
   buildFunctionGraph,
@@ -221,6 +221,33 @@ ipcMain.handle(
   ): Promise<FileDiff> => {
     if (!projectRoot) return { ok: false, error: 'No project open' };
     return fileDiff(projectRoot, opts.base, opts.compare, opts.file, opts.range, opts.baseRange);
+  },
+);
+
+export type Source = { ok: true; lines: SourceLine[] } | { ok: false; error: string };
+
+/**
+ * The body of a function that has no diff to show. Read from the same place the scan
+ * came from: the working tree when compare is checked out (so uncommitted edits match
+ * what was graphed), otherwise the committed copy.
+ */
+ipcMain.handle(
+  'source',
+  async (
+    _event,
+    opts: { compare: string; file: string; range: [number, number] },
+  ): Promise<Source> => {
+    if (!projectRoot) return { ok: false, error: 'No project open' };
+    try {
+      const text =
+        opts.compare === currentBranch
+          ? fs.readFileSync(path.join(projectRoot, opts.file), 'utf8')
+          : await showFile(projectRoot, opts.compare, opts.file);
+      if (text === null) return { ok: false, error: `${opts.file} not found on ${opts.compare}` };
+      return { ok: true, lines: sliceLines(text, opts.range[0], opts.range[1]) };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
   },
 );
 

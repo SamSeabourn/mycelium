@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseUnified, sliceRows } = require('../dist/diff.js');
+const { parseUnified, sliceRows, sliceLines } = require('../dist/diff.js');
 
 const unified = (...lines) => lines.join('\n');
 
@@ -101,4 +101,23 @@ test('sliceRows blanks the left side when the function is new', () => {
 
 test('sliceRows returns nothing when the function is untouched', () => {
   assert.deepEqual(sliceRows(wholeFile, [40, 50], [40, 50]), []);
+});
+
+test('sliceLines returns an inclusive, 1-based range', () => {
+  const text = 'one\ntwo\nthree\nfour';
+
+  assert.deepEqual(sliceLines(text, 2, 3), [
+    { no: 2, text: 'two' },
+    { no: 3, text: 'three' },
+  ]);
+});
+
+test('sliceLines clamps to the file rather than emitting blanks', () => {
+  // A stale span (file edited since the scan) must not produce undefined lines.
+  const text = 'one\ntwo';
+
+  assert.deepEqual(sliceLines(text, 0, 99), [
+    { no: 1, text: 'one' },
+    { no: 2, text: 'two' },
+  ]);
 });

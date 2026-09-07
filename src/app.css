@@ -168,6 +168,10 @@ col.c-no {
 col.c-code {
   width: calc(50% - 42px);
 }
+/* Source view: one code column, so it takes everything the gutter leaves. */
+col.c-code-full {
+  width: calc(100% - 42px);
+}
 td.no {
   text-align: right;
   opacity: 0.45;

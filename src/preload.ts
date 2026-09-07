@@ -12,5 +12,7 @@ contextBridge.exposeInMainWorld('diffish', {
     baseRange?: [number, number];
   }) =>
     ipcRenderer.invoke('file-diff', opts),
+  source: (opts: { compare: string; file: string; range: [number, number] }) =>
+    ipcRenderer.invoke('source', opts),
   openFile: (relative: string) => ipcRenderer.invoke('open-file', relative),
 });
