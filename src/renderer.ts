@@ -137,6 +137,36 @@ function fileList(title: string, entries: { name: string; where?: string }[]): s
 
 let diffOpen = false;
 
+/**
+ * Marching ants on the focused node.
+ *
+ * cytoscape has no looping animation for a style property, so the dash offset is
+ * stepped per frame. The loop stops as soon as nothing is selected rather than
+ * burning a frame callback for the life of the app.
+ */
+let antsFrame = 0;
+let antsOffset = 0;
+
+function marchAnts() {
+  const selected = cy?.$(':selected');
+  if (!selected || selected.empty()) {
+    antsFrame = 0;
+    return;
+  }
+  antsOffset -= 0.6;
+  selected.style('border-dash-offset', antsOffset);
+  antsFrame = requestAnimationFrame(marchAnts);
+}
+
+function startAnts() {
+  if (antsFrame === 0) antsFrame = requestAnimationFrame(marchAnts);
+}
+
+function stopAnts() {
+  if (antsFrame !== 0) cancelAnimationFrame(antsFrame);
+  antsFrame = 0;
+}
+
 function setWide(on: boolean) {
   diffOpen = on;
   mainEl.classList.toggle('wide', on);
@@ -201,6 +231,7 @@ panel.addEventListener('click', (e) => {
 
   cy.elements().unselect();
   node.select();
+  startAnts();
   // Centre it — the target is often off-screen, and without this the graph looks
   // like nothing happened.
   cy.animate({ center: { eles: node }, duration: 200 });
@@ -528,6 +559,7 @@ function render(result: Extract<Analysis, { ok: true }>) {
   const edgeCount = elements.filter((e) => 'source' in e.data).length;
   const nodeCount = elements.length - edgeCount;
 
+  stopAnts();
   cy?.destroy();
   cy = cytoscape({
     container: cyEl,
@@ -537,6 +569,7 @@ function render(result: Extract<Analysis, { ok: true }>) {
   });
 
   cy.on('tap', 'node', (evt) => showFile(evt.target.id()));
+  cy.on('select', 'node', startAnts);
 
   const changedCount = Object.keys(changed).length;
   const ghostCount = Object.values(ghosts).reduce((n, list) => n + list.length, 0);

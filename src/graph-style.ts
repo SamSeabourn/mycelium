@@ -14,14 +14,12 @@ export function graphStyle(): StylesheetJson {
   // Same two vars app.css uses, so badges, diff rows, links and nodes stay in step.
   const added = themeColor('--diff-added');
   const modified = themeColor('--diff-modified');
-  const selected = themeColor('--pick');
   const ink = themeColor('--color-base-content');
   const idle = themeColor('--node-idle');
   const muted = themeColor('--edge-idle');
   const strong = themeColor('--edge-direct');
   const addedRim = themeColor('--diff-added-rim');
   const modifiedRim = themeColor('--diff-modified-rim');
-  const pickRim = themeColor('--pick-rim');
 
   return [
     {
@@ -117,14 +115,16 @@ export function graphStyle(): StylesheetJson {
     {
       selector: 'node:selected',
       style: {
-        'background-color': selected,
-        'border-color': pickRim,
+        // Focus is a ring, not a repaint: the fill keeps saying added/modified/idle
+        // while the dashes say "this is the one you picked". border-position outside
+        // keeps the ring clear of the fill entirely.
+        'border-color': ink,
         'border-opacity': 1,
-        'border-width': 1.5,
-        width: 26,
-        height: 26,
+        'border-width': 2.5,
+        'border-style': 'dashed',
+        'border-dash-pattern': [5, 4],
+        'border-position': 'outside',
         opacity: 1,
-        // The selected node is the one you want to read, so its label comes forward.
         label: 'data(label)',
         'text-opacity': 1,
         'font-size': 14,
