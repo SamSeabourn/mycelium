@@ -1,6 +1,7 @@
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import type { Analysis, FileDiff, Project } from './main';
+import { toUnified } from './diff';
 import type { ChangeStatus } from './git';
 import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
@@ -189,32 +190,22 @@ divider.addEventListener('dblclick', () => {
 });
 
 function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
-  const cell = (no: number | null, text: string | null, side: 'left' | 'right') =>
-    text === null
-      ? `<td class="no"></td><td class="code ${side} blank"></td>`
-      : `<td class="no">${no ?? ''}</td><td class="code ${side}">${esc(text)}</td>`;
+  const lines = toUnified(rows);
+  if (lines.length === 0) return '';
 
-  const body = rows
-    .map((row) => {
-      if (row.kind === 'gap') {
-        // An empty gutter cell first, so the enclosing-declaration text git puts in
-        // the @@ header lines up with the code rather than starting in the numbers.
-        return `<tr class="gap"><td class="no"></td><td colspan="3">${esc(row.text) || '…'}</td></tr>`;
-      }
-      if (row.kind === 'context') {
-        return `<tr>${cell(row.leftNo, row.text, 'left')}${cell(row.rightNo, row.text, 'right')}</tr>`;
-      }
-      const cls = [row.left !== null ? 'del' : '', row.right !== null ? 'add' : ''].join(' ').trim();
-      return `<tr class="${cls}">${cell(row.leftNo, row.left, 'left')}${cell(row.rightNo, row.right, 'right')}</tr>`;
-    })
+  const mark = { context: ' ', del: '-', add: '+' } as const;
+  const body = lines
+    .map(
+      (l) =>
+        `<tr class="${l.kind}"><td class="no">${l.no || ''}</td>` +
+        `<td class="mark">${mark[l.kind]}</td>` +
+        `<td class="code">${esc(l.text)}</td></tr>`,
+    )
     .join('');
 
-  // table-layout:fixed takes column widths from the first row — and the first row
-  // is usually a colspan=4 hunk header, which would split the table into four equal
-  // columns and leave a gutter as wide as the code. A colgroup pins them instead.
-  const cols =
-    '<colgroup><col class="c-no" /><col class="c-code" /><col class="c-no" /><col class="c-code" /></colgroup>';
-
+  // table-layout:fixed reads widths from the first row, which varies; a colgroup
+  // pins them regardless of what the first line happens to be.
+  const cols = '<colgroup><col class="c-no" /><col class="c-mark" /><col class="c-code" /></colgroup>';
   return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
 }
 

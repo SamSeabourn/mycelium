@@ -9,8 +9,8 @@ import {
   fileDiff,
   withBranchCheckout,
   type ChangeStatus,
-  type DiffRow,
 } from './git';
+import type { DiffRow } from './diff';
 import { HOPS, withinHops } from './subgraph';
 import { buildFunctionGraph, markChangedFunctions, parseFile, type FnDef } from './functions';
 
