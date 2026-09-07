@@ -18,6 +18,10 @@ export function graphStyle(): StylesheetJson {
   const ink = themeColor('--color-base-content');
   const idle = themeColor('--node-idle');
   const muted = themeColor('--edge-idle');
+  const strong = themeColor('--edge-direct');
+  const addedRim = themeColor('--diff-added-rim');
+  const modifiedRim = themeColor('--diff-modified-rim');
+  const pickRim = themeColor('--pick-rim');
 
   return [
     {
@@ -51,11 +55,11 @@ export function graphStyle(): StylesheetJson {
     { selector: 'node[hop = "3"]', style: { opacity: 0.22, width: 9, height: 9, label: '' } },
     {
       selector: 'node[change = "A"]',
-      style: { 'background-color': added, 'border-color': ink, 'border-opacity': 1, 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 13 },
+      style: { 'background-color': added, 'border-color': addedRim, 'border-opacity': 1, 'border-width': 1.5, opacity: 1, width: 24, height: 24, 'font-size': 13 },
     },
     {
       selector: 'node[change = "M"], node[change = "R"]',
-      style: { 'background-color': modified, 'border-color': ink, 'border-opacity': 1, 'border-width': 2, opacity: 1, width: 24, height: 24, 'font-size': 13 },
+      style: { 'background-color': modified, 'border-color': modifiedRim, 'border-opacity': 1, 'border-width': 1.5, opacity: 1, width: 24, height: 24, 'font-size': 13 },
     },
     {
       selector: 'edge',
@@ -76,7 +80,7 @@ export function graphStyle(): StylesheetJson {
     // caller changed — a ghost is by definition something we are not showing.
     {
       selector: 'edge[direct = "1"]',
-      style: { 'line-color': ink, 'target-arrow-color': ink, width: 1.8, 'arrow-scale': 0.9 },
+      style: { 'line-color': strong, 'target-arrow-color': strong, width: 1.5, 'arrow-scale': 0.7 },
     },
     // Ghosts: calls into files outside the hop window. Deliberately faint and dashed
     // so they read as "there is more here" rather than as part of the diff.
@@ -108,9 +112,9 @@ export function graphStyle(): StylesheetJson {
       selector: 'node:selected',
       style: {
         'background-color': selected,
-        'border-color': ink,
+        'border-color': pickRim,
         'border-opacity': 1,
-        'border-width': 2,
+        'border-width': 1.5,
         width: 26,
         height: 26,
         opacity: 1,

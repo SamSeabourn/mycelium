@@ -20,6 +20,13 @@
      which made unchanged nodes disappear into the background. */
   --node-idle: color-mix(in oklab, var(--color-base-content) 30%, var(--color-base-100));
   --edge-idle: color-mix(in oklab, var(--color-base-content) 25%, var(--color-base-100));
+  /* A direct edge should read as "this one matters", not glare. Full base-content is
+     near-white on the black theme, which made every arrow shout. */
+  --edge-direct: color-mix(in oklab, var(--color-base-content) 55%, var(--color-base-100));
+  /* Rims are the node's own colour darkened, rather than a white outline. */
+  --diff-added-rim: color-mix(in oklab, var(--diff-added) 50%, var(--color-base-100));
+  --diff-modified-rim: color-mix(in oklab, var(--diff-modified) 50%, var(--color-base-100));
+  --pick-rim: color-mix(in oklab, var(--pick) 55%, var(--color-base-100));
 }
 
 html,
