@@ -268,7 +268,20 @@ td.blank {
   border: 1px solid var(--edge-idle);
   border-radius: var(--radius-field);
   white-space: nowrap;
+  font-weight: 600;
   box-shadow: 0 2px 8px rgb(0 0 0 / 45%);
+}
+#tip.tip-added {
+  border-color: var(--diff-added);
+  color: var(--diff-added);
+}
+#tip.tip-modified {
+  border-color: var(--diff-modified);
+  color: var(--diff-modified);
+}
+#tip.tip-plain {
+  border-color: var(--pick);
+  color: var(--pick);
 }
 
 /* Two things Tailwind would have given us; we are not shipping Tailwind, so they are

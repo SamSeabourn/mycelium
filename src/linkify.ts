@@ -9,18 +9,14 @@ const colour = (t: LinkTarget) =>
   t.change === 'A' ? 'fn-added' : t.change ? 'fn-modified' : 'fn-plain';
 
 const STATUS: Record<string, string> = {
-  A: 'added',
-  M: 'modified',
-  D: 'deleted',
-  R: 'renamed',
+  A: '+ added',
+  M: '~ modified',
+  D: '\u2212 deleted',
+  R: '\u2192 renamed',
 };
 
 /** Text for the hover tooltip the renderer draws. */
-const tip = (t: LinkTarget) => {
-  const status = t.change ? STATUS[t.change] : 'no changes';
-  const file = t.id.includes('#') ? t.id.slice(0, t.id.indexOf('#')) : t.id;
-  return `${status} · ${file}`;
-};
+const tip = (t: LinkTarget) => (t.change ? STATUS[t.change] : 'no changes');
 
 /**
  * Wrap known function names in a line of code so they can be coloured and clicked.

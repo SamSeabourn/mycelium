@@ -167,6 +167,13 @@ panel.addEventListener('mouseover', (e) => {
   const link = (e.target as HTMLElement).closest<HTMLElement>('.fn-link');
   if (!link?.dataset.tip) return;
   tip.textContent = link.dataset.tip;
+  // Border takes the status colour. Read from the link's own class rather than a
+  // second data attribute — it already carries the status.
+  tip.className = link.classList.contains('fn-added')
+    ? 'tip-added'
+    : link.classList.contains('fn-modified')
+      ? 'tip-modified'
+      : 'tip-plain';
   tip.hidden = false;
   placeTip(e);
 });
