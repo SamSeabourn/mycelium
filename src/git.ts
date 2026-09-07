@@ -103,11 +103,12 @@ export async function fileDiff(
   compare: string,
   file: string,
   range?: [number, number],
+  baseRange?: [number, number],
 ): Promise<GitResult<{ rows: DiffRow[] }>> {
   try {
     const stdout = await git(root, ['diff', '--no-color', `${base}...${compare}`, '--', file]);
     const rows = parseUnified(stdout);
-    return { ok: true, rows: range ? sliceRows(rows, range[0], range[1]) : rows };
+    return { ok: true, rows: range ? sliceRows(rows, range, baseRange) : rows };
   } catch (e) {
     return { ok: false, error: message(e) };
   }

@@ -1,7 +1,6 @@
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import type { Analysis, FileDiff, Project } from './main';
-import { toUnified } from './diff';
 import type { ChangeStatus } from './git';
 import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
@@ -13,7 +12,13 @@ declare global {
     diffish: {
       pickProject(): Promise<Project>;
       analyse(opts: { base: string; compare: string }): Promise<Analysis>;
-      fileDiff(opts: { base: string; compare: string; file: string; range?: [number, number] }): Promise<FileDiff>;
+      fileDiff(opts: {
+        base: string;
+        compare: string;
+        file: string;
+        range?: [number, number];
+        baseRange?: [number, number];
+      }): Promise<FileDiff>;
       openFile(relative: string): Promise<string>;
     };
   }
@@ -47,6 +52,7 @@ let ghosts: Record<string, string[]> = {};
 let label: Record<string, string> = {};
 let owner: Record<string, string> = {};
 let span: Record<string, [number, number]> = {};
+let baseSpan: Record<string, [number, number]> = {};
 
 /** Node ids are "file#name"; the diff view needs the file half. */
 const fileOf = (id: string) => owner[id] ?? id;
@@ -190,22 +196,27 @@ divider.addEventListener('dblclick', () => {
 });
 
 function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
-  const lines = toUnified(rows);
-  if (lines.length === 0) return '';
+  const cell = (no: number | null, text: string | null, side: 'left' | 'right') =>
+    text === null
+      ? `<td class="no"></td><td class="code ${side} blank"></td>`
+      : `<td class="no">${no ?? ''}</td><td class="code ${side}">${esc(text)}</td>`;
 
-  const mark = { context: ' ', del: '-', add: '+' } as const;
-  const body = lines
-    .map(
-      (l) =>
-        `<tr class="${l.kind}"><td class="no">${l.no || ''}</td>` +
-        `<td class="mark">${mark[l.kind]}</td>` +
-        `<td class="code">${esc(l.text)}</td></tr>`,
-    )
+  const body = rows
+    .map((row) => {
+      // sliceRows drops these, but the type still allows them.
+      if (row.kind === 'gap') return '';
+      if (row.kind === 'context') {
+        return `<tr>${cell(row.leftNo, row.text, 'left')}${cell(row.rightNo, row.text, 'right')}</tr>`;
+      }
+      const cls = [row.left !== null ? 'del' : '', row.right !== null ? 'add' : ''].join(' ').trim();
+      return `<tr class="${cls}">${cell(row.leftNo, row.left, 'left')}${cell(row.rightNo, row.right, 'right')}</tr>`;
+    })
     .join('');
 
-  // table-layout:fixed reads widths from the first row, which varies; a colgroup
-  // pins them regardless of what the first line happens to be.
-  const cols = '<colgroup><col class="c-no" /><col class="c-mark" /><col class="c-code" /></colgroup>';
+  // table-layout:fixed reads column widths from the first row, which varies; a
+  // colgroup pins them regardless of what that row happens to be.
+  const cols =
+    '<colgroup><col class="c-no" /><col class="c-code" /><col class="c-no" /><col class="c-code" /></colgroup>';
   return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
 }
 
@@ -219,8 +230,10 @@ async function showDiff(id: string) {
     compare: compareSel.value,
     file: fileOf(id),
     // Scope to just this function's lines. Without a span (a node we never parsed)
-    // fall back to the whole file rather than showing nothing.
+    // fall back to the whole file rather than showing nothing. baseRange is absent
+    // for a new function, which is what keeps its left column clean.
     range: span[id],
+    baseRange: baseSpan[id],
   });
 
   if (!result.ok) {
@@ -352,6 +365,7 @@ function render(result: Extract<Analysis, { ok: true }>) {
   label = result.label;
   owner = result.file;
   span = result.span;
+  baseSpan = result.baseSpan;
 
   const elements = toElements(graph);
   const edgeCount = elements.filter((e) => 'source' in e.data).length;

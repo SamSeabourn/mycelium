@@ -44,6 +44,8 @@ export type Analysis =
       file: Record<string, string>;
       /** fn id -> [firstLine, lastLine] on the compare branch */
       span: Record<string, [number, number]>;
+      /** same, at the merge base — absent for a function that is new */
+      baseSpan: Record<string, [number, number]>;
     }
   | { ok: false; error: string };
 
@@ -157,18 +159,27 @@ ipcMain.handle(
       // Which functions existed before, so a new function inside an edited file is
       // reported as added rather than inheriting the file's "modified".
       const baseNames: Record<string, Set<string>> = {};
+      // name -> span at the merge base, so a modified function's own removals can be
+      // told apart from a neighbouring rewrite's.
+      const baseDefs: Record<string, Record<string, [number, number]>> = {};
       for (const f of seeds) {
         const before = await showFile(projectRoot, since, f);
-        if (before !== null) baseNames[f] = new Set(parseFile(f, before).defs.map((d) => d.name));
+        if (before === null) continue;
+        const parsed = parseFile(f, before).defs;
+        baseNames[f] = new Set(parsed.map((d) => d.name));
+        baseDefs[f] = Object.fromEntries(parsed.map((d) => [d.name, [d.start, d.end]]));
       }
 
       const fnChanged: Record<string, ChangeStatus> = {};
       const fnHop: Record<string, number> = {};
+      const baseSpan: Record<string, [number, number]> = {};
       for (const id of Object.keys(fns.graph)) {
         const owner = fns.file[id];
         if (touched.has(id)) {
           fnChanged[id] = functionStatus(fns.label[id], changed[owner], baseNames[owner]);
         }
+        const before = baseDefs[owner]?.[fns.label[id]];
+        if (before) baseSpan[id] = before;
         fnHop[id] = distance.get(owner) ?? HOPS;
       }
 
@@ -182,6 +193,7 @@ ipcMain.handle(
         label: fns.label,
         file: fns.file,
         span: fns.span,
+        baseSpan,
       };
     };
 
@@ -199,10 +211,16 @@ ipcMain.handle(
   'file-diff',
   async (
     _event,
-    opts: { base: string; compare: string; file: string; range?: [number, number] },
+    opts: {
+      base: string;
+      compare: string;
+      file: string;
+      range?: [number, number];
+      baseRange?: [number, number];
+    },
   ): Promise<FileDiff> => {
     if (!projectRoot) return { ok: false, error: 'No project open' };
-    return fileDiff(projectRoot, opts.base, opts.compare, opts.file, opts.range);
+    return fileDiff(projectRoot, opts.base, opts.compare, opts.file, opts.range, opts.baseRange);
   },
 );
 

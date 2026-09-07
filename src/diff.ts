@@ -75,67 +75,46 @@ export function parseUnified(stdout: string): DiffRow[] {
 }
 
 /**
- * Narrow a file's diff to one function's line range on the compare side.
+ * Narrow a file's diff to one function, per side.
  *
- * Deletions have no compare-side line number, so they inherit the position of the
- * last line that did — otherwise a removed line would be dropped from the very
- * function whose diff you asked to see. Hunk headers go: the panel already names
- * the function, so they are noise at this scale.
+ * `right` is the function's span on the compare branch; `left` its span at the merge
+ * base, absent when the function is new. Each side is filtered by its own line
+ * numbers, so a removal only appears if it came from this function's old body —
+ * previously a deletion inherited the position of the last compare-side line, which
+ * let a neighbouring rewrite's removals ride along into an added function's diff.
+ *
+ * Hunk headers go: the panel already names the function.
  */
-export function sliceRows(rows: DiffRow[], from: number, to: number): DiffRow[] {
-  let at = 0;
+export function sliceRows(
+  rows: DiffRow[],
+  right: [number, number],
+  left?: [number, number],
+): DiffRow[] {
+  const within = (n: number | null, range?: [number, number]) =>
+    n !== null && range !== undefined && n >= range[0] && n <= range[1];
+
   const out: DiffRow[] = [];
-
-  for (const row of rows) {
-    if (row.kind === 'gap') continue;
-    if (row.kind === 'context') at = row.rightNo;
-    else if (row.rightNo !== null) at = row.rightNo;
-    // else: pure deletion — keep `at` where it was.
-
-    if (at >= from && at <= to) out.push(row);
-  }
-
-  return out;
-}
-
-export type UnifiedLine =
-  | { kind: 'context'; no: number; text: string }
-  | { kind: 'del'; no: number; text: string }
-  | { kind: 'add'; no: number; text: string };
-
-/**
- * Flatten side-by-side rows into a single column.
- *
- * `parseUnified` pairs a run of removals against a run of additions by position,
- * which is right for a small edit and meaningless for a rewritten function — old
- * line 94 ends up opposite new line 106 for no reason, and the left column then
- * runs blank for the rest of the additions. Unified drops the pairing: all removals
- * in a run, then all additions.
- */
-export function toUnified(rows: DiffRow[]): UnifiedLine[] {
-  const out: UnifiedLine[] = [];
-  let dels: UnifiedLine[] = [];
-  let adds: UnifiedLine[] = [];
-
-  const flush = () => {
-    out.push(...dels, ...adds);
-    dels = [];
-    adds = [];
-  };
 
   for (const row of rows) {
     if (row.kind === 'gap') continue;
 
     if (row.kind === 'context') {
-      flush();
-      out.push({ kind: 'context', no: row.rightNo, text: row.text });
+      if (within(row.rightNo, right)) out.push(row);
       continue;
     }
 
-    if (row.left !== null) dels.push({ kind: 'del', no: row.leftNo ?? 0, text: row.left });
-    if (row.right !== null) adds.push({ kind: 'add', no: row.rightNo ?? 0, text: row.right });
+    const keepRight = within(row.rightNo, right);
+    const keepLeft = within(row.leftNo, left);
+    if (!keepRight && !keepLeft) continue;
+
+    out.push({
+      kind: 'change',
+      leftNo: keepLeft ? row.leftNo : null,
+      left: keepLeft ? row.left : null,
+      rightNo: keepRight ? row.rightNo : null,
+      right: keepRight ? row.right : null,
+    });
   }
 
-  flush();
   return out;
 }

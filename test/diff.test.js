@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseUnified, sliceRows, toUnified } = require('../dist/diff.js');
+const { parseUnified, sliceRows } = require('../dist/diff.js');
 
 const unified = (...lines) => lines.join('\n');
 
@@ -71,57 +71,34 @@ const wholeFile = [
 ];
 
 test('sliceRows keeps only the requested function', () => {
-  const rows = sliceRows(wholeFile, 10, 12);
+  const rows = sliceRows(wholeFile, [10, 12], [10, 12]);
 
-  assert.deepEqual(
-    rows.map((r) => r.rightNo),
-    [10, 11, 12],
-    'lines outside the span, and hunk headers, are dropped',
-  );
+  assert.deepEqual(rows.map((r) => r.rightNo), [10, 11, 12], 'hunk headers and out-of-range lines go');
 });
 
-test('sliceRows keeps a deletion that has no compare-side line', () => {
-  // The removed line sits inside beta and must not vanish from beta's own diff.
-  const rows = sliceRows(wholeFile, 20, 21);
+test('sliceRows keeps a removal that belongs to the function', () => {
+  // beta's own removal, at old line 21, inside its base-side span.
+  const rows = sliceRows(wholeFile, [20, 21], [20, 22]);
 
-  assert.equal(rows.length, 3);
-  assert.deepEqual(rows[1], { kind: 'change', leftNo: 21, left: 'gone', rightNo: null, right: null });
+  assert.ok(rows.some((r) => r.leftNo === 21 && r.left === 'gone'));
+});
+
+test('sliceRows drops removals from outside the base span', () => {
+  // alpha's compare-side range, but beta's removal must not ride along.
+  const rows = sliceRows(wholeFile, [10, 12], [10, 12]);
+
+  assert.ok(!rows.some((r) => r.left === 'gone'));
+});
+
+test('sliceRows blanks the left side when the function is new', () => {
+  // No base span: the function did not exist, so it can have no removals — this is
+  // what stopped a neighbouring rewrite's deletions appearing in an added function.
+  const rows = sliceRows(wholeFile, [10, 12]);
+
+  assert.ok(rows.every((r) => r.kind === 'context' || r.left === null));
+  assert.ok(rows.some((r) => r.right === 'new'), 'additions still come through');
 });
 
 test('sliceRows returns nothing when the function is untouched', () => {
-  assert.deepEqual(sliceRows(wholeFile, 40, 50), []);
-});
-
-test('toUnified groups a run of removals before the additions', () => {
-  // A rewritten function: 2 lines out, 3 in. Pairing them positionally would put
-  // old line 94 opposite new line 106, which means nothing.
-  const rows = [
-    { kind: 'change', leftNo: 94, left: 'old one', rightNo: 106, right: 'new one' },
-    { kind: 'change', leftNo: 95, left: 'old two', rightNo: 107, right: 'new two' },
-    { kind: 'change', leftNo: null, left: null, rightNo: 108, right: 'new three' },
-  ];
-
-  assert.deepEqual(toUnified(rows), [
-    { kind: 'del', no: 94, text: 'old one' },
-    { kind: 'del', no: 95, text: 'old two' },
-    { kind: 'add', no: 106, text: 'new one' },
-    { kind: 'add', no: 107, text: 'new two' },
-    { kind: 'add', no: 108, text: 'new three' },
-  ]);
-});
-
-test('toUnified keeps context between runs and drops hunk headers', () => {
-  const rows = [
-    { kind: 'gap', text: 'function work()' },
-    { kind: 'context', leftNo: 10, rightNo: 10, text: 'keep' },
-    { kind: 'change', leftNo: 11, left: 'was', rightNo: 11, right: 'now' },
-    { kind: 'context', leftNo: 12, rightNo: 12, text: 'tail' },
-  ];
-
-  assert.deepEqual(toUnified(rows), [
-    { kind: 'context', no: 10, text: 'keep' },
-    { kind: 'del', no: 11, text: 'was' },
-    { kind: 'add', no: 11, text: 'now' },
-    { kind: 'context', no: 12, text: 'tail' },
-  ]);
+  assert.deepEqual(sliceRows(wholeFile, [40, 50], [40, 50]), []);
 });

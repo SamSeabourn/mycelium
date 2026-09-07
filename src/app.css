@@ -157,27 +157,27 @@ table.diff td {
   word-break: break-word;
 }
 col.c-no {
-  width: 44px;
+  width: 42px;
 }
-col.c-mark {
-  width: 16px;
+col.c-code {
+  width: calc(50% - 42px);
 }
 td.no {
   text-align: right;
   opacity: 0.45;
   user-select: none;
+  border-right: 1px solid var(--color-base-300);
 }
-td.mark {
-  padding: 0;
-  text-align: center;
-  opacity: 0.6;
-  user-select: none;
-}
-tr.del td {
+tr.del td.code.left {
   background: color-mix(in oklab, var(--color-error) 18%, var(--color-base-100));
 }
-tr.add td {
+tr.add td.code.right {
   background: color-mix(in oklab, var(--color-success) 18%, var(--color-base-100));
+}
+/* The empty half of a pair — shaded so the eye reads it as "nothing here" rather
+   than as an unstyled gap. */
+td.blank {
+  background: var(--color-base-200);
 }
 
 /* Two things Tailwind would have given us; we are not shipping Tailwind, so they are
