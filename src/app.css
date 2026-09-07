@@ -243,6 +243,19 @@ td.blank {
   cursor: pointer;
   text-decoration: underline dotted;
   text-underline-offset: 2px;
+  /* A slow breath so call sites read as live without competing with the code.
+     Compositor-driven, unlike the focus ring, which needs a per-frame step. */
+  animation: fn-pulse 3s ease-in-out infinite;
+}
+@keyframes fn-pulse {
+  50% {
+    opacity: 0.9;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fn-link {
+    animation: none;
+  }
 }
 .fn-link:hover {
   text-decoration: underline solid;

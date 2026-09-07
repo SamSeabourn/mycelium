@@ -162,6 +162,8 @@ function marchAnts() {
 }
 
 function startAnts() {
+  // Same courtesy the CSS pulse gets: the ring still shows, it just holds still.
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   if (antsFrame === 0) antsFrame = requestAnimationFrame(marchAnts);
 }
 
@@ -480,8 +482,8 @@ function showFile(id: string) {
     <div id="diff-body"></div>
     <div class="card card-border refs">
       <div class="card-body">
-        ${fileList('Calls', pretty(graph[id] ?? []))}
-        ${fileList('Called by', pretty(importersOf(id)))}
+        ${fileList('Internally calls', pretty(graph[id] ?? []))}
+        ${fileList('Callsites', pretty(importersOf(id)))}
       </div>
     </div>
   `;
