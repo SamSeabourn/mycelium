@@ -257,6 +257,40 @@ td.blank {
   color: var(--pick);
 }
 
+/* highlight.js classes mapped onto the theme rather than shipping an hljs theme —
+   those bring their own palette and would fight the DaisyUI one. */
+.hljs-comment,
+.hljs-quote {
+  color: color-mix(in oklab, var(--color-base-content) 45%, var(--color-base-100));
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-literal,
+.hljs-type {
+  color: oklch(72% 0.15 300);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-template-variable {
+  color: oklch(74% 0.14 145);
+}
+.hljs-number {
+  color: oklch(78% 0.13 60);
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-built_in {
+  color: oklch(78% 0.11 230);
+}
+.hljs-attr,
+.hljs-property,
+.hljs-variable {
+  color: color-mix(in oklab, var(--color-base-content) 85%, var(--color-base-100));
+}
+.hljs-params {
+  color: inherit;
+}
+
 #tip {
   position: fixed;
   z-index: 50;

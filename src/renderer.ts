@@ -4,7 +4,8 @@ import type { Analysis, FileDiff, Project, Source } from './main';
 import type { ChangeStatus } from './git';
 import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
-import { linkifyCode, type LinkTarget } from './linkify';
+import { linkifyElement, type LinkTarget } from './linkify';
+import { highlightLines } from './highlight';
 
 cytoscape.use(fcose);
 
@@ -280,24 +281,36 @@ function linkTargets(id: string): Map<string, LinkTarget> {
   return targets;
 }
 
-function diffTable(rows: Extract<FileDiff, { ok: true }>['rows'], id: string): string {
-  const targets = linkTargets(id);
-  const code = (text: string) => linkifyCode(text, targets);
+function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
+  // Highlight each side as one block, not line by line: a JSDoc comment or template
+  // literal spanning several lines only colours correctly with its own context.
+  const visible = rows.filter((r) => r.kind !== 'gap');
+  const side = (pick: 'left' | 'right') =>
+    highlightLines(
+      visible
+        .map((r) => (r.kind === 'context' ? r.text : (pick === 'left' ? r.left : r.right) ?? ''))
+        .join('\n'),
+    );
+  const left = side('left');
+  const right = side('right');
 
-  const cell = (no: number | null, text: string | null, side: 'left' | 'right') =>
-    text === null
+  const cell = (no: number | null, html: string | null, side: 'left' | 'right') =>
+    html === null
       ? `<td class="no"></td><td class="code ${side} blank"></td>`
-      : `<td class="no">${no ?? ''}</td><td class="code ${side}">${code(text)}</td>`;
+      : `<td class="no">${no ?? ''}</td><td class="code ${side}">${html}</td>`;
 
-  const body = rows
-    .map((row) => {
-      // sliceRows drops these, but the type still allows them.
-      if (row.kind === 'gap') return '';
+  const body = visible
+    .map((row, i) => {
       if (row.kind === 'context') {
-        return `<tr>${cell(row.leftNo, row.text, 'left')}${cell(row.rightNo, row.text, 'right')}</tr>`;
+        return `<tr>${cell(row.leftNo, left[i] ?? '', 'left')}${cell(row.rightNo, right[i] ?? '', 'right')}</tr>`;
       }
       const cls = [row.left !== null ? 'del' : '', row.right !== null ? 'add' : ''].join(' ').trim();
-      return `<tr class="${cls}">${cell(row.leftNo, row.left, 'left')}${cell(row.rightNo, row.right, 'right')}</tr>`;
+      return (
+        `<tr class="${cls}">` +
+        cell(row.leftNo, row.left === null ? null : left[i] ?? '', 'left') +
+        cell(row.rightNo, row.right === null ? null : right[i] ?? '', 'right') +
+        '</tr>'
+      );
     })
     .join('');
 
@@ -308,7 +321,6 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows'], id: string): s
   return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
 }
 
-/** The function's body, for a node with no diff. Same link treatment as a diff. */
 async function showSource(id: string) {
   const host = document.getElementById('diff-body');
   const range = span[id];
@@ -326,15 +338,16 @@ async function showSource(id: string) {
     return;
   }
 
-  const targets = linkTargets(id);
+  const highlighted = highlightLines(result.lines.map((l) => l.text).join('\n'));
   const body = result.lines
     .map(
-      (l) =>
-        `<tr><td class="no">${l.no}</td><td class="code">${linkifyCode(l.text, targets)}</td></tr>`,
+      (l, i) =>
+        `<tr><td class="no">${l.no}</td><td class="code">${highlighted[i] ?? ''}</td></tr>`,
     )
     .join('');
   const cols = '<colgroup><col class="c-no" /><col class="c-code-full" /></colgroup>';
   host.innerHTML = `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
+  linkifyElement(host, linkTargets(id));
 }
 
 async function showDiff(id: string) {
@@ -360,7 +373,8 @@ async function showDiff(id: string) {
   host.innerHTML =
     result.rows.length === 0
       ? '<p class="path">No changes inside this function between the selected branches.</p>'
-      : diffTable(result.rows, id);
+      : diffTable(result.rows);
+  linkifyElement(host, linkTargets(id));
 }
 
 function showGhost(id: string) {
