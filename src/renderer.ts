@@ -270,33 +270,19 @@ function showFile(id: string) {
 
   const hasDiff = changed[id] !== undefined;
   const file = fileOf(id);
+
   const pretty = (ids: string[]) => ids.map((i) => ({ name: label[i] ?? i, where: owner[i] }));
 
+  // Calls and callers first: they are the reason to have selected this node. The
+  // diff sits below, headed by the file and line range so it is still identifiable
+  // without a title of its own.
   panel.innerHTML = `
-    <h2>${esc(label[id] ?? id)}</h2>
-    <p class="path">${esc(file)}</p>
-    ${state}
-    <div class="actions">
-      <button id="open-file" class="btn btn-sm">Open file</button>
-      ${hasDiff ? '<button id="hide-diff" class="btn btn-sm btn-ghost">Hide diff</button>' : ''}
-    </div>
-    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="opacity-60">${esc(baseSel.value)} … ${esc(compareSel.value)}${span[id] ? ` · lines ${span[id][0]}-${span[id][1]}` : ''}</span></div>` : ''}
-    <div id="diff-body"></div>
     ${fileList('Calls', pretty(graph[id] ?? []))}
     ${fileList('Called by', pretty(importersOf(id)))}
+    <div class="state">${state}</div>
+    ${hasDiff ? `<div class="diff-head"><strong>${esc(file)}</strong><span class="opacity-60">${esc(baseSel.value)} … ${esc(compareSel.value)}${span[id] ? ` · lines ${span[id][0]}-${span[id][1]}` : ''}</span></div>` : ''}
+    <div id="diff-body"></div>
   `;
-
-  document.getElementById('open-file')?.addEventListener('click', async () => {
-    const err = await window.diffish.openFile(file);
-    if (err) panel.insertAdjacentHTML('afterbegin', `<div class="alert alert-error">${esc(err)}</div>`);
-  });
-
-  document.getElementById('hide-diff')?.addEventListener('click', () => {
-    setWide(false);
-    document.getElementById('diff-body')!.innerHTML = '';
-    document.querySelector('.diff-head')?.remove();
-    (document.getElementById('hide-diff') as HTMLButtonElement).remove();
-  });
 
   // Clicking a changed node in the graph is the whole gesture — the diff opens
   // with it. Unchanged neighbours have nothing to show, so the panel stays narrow.
