@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseNameStatus, parseHunks } = require('../dist/git.js');
+const { parseNameStatus, parseHunks, parseRenames } = require('../dist/git.js');
 
 
 test('parseNameStatus reads add, modify and delete', () => {
@@ -31,3 +31,9 @@ test('parseNameStatus on empty output returns nothing', () => {
   assert.deepEqual(parseNameStatus('\n\n'), {});
 });
 
+
+test('parseRenames maps each new path back to its old one', () => {
+  const out = ['M\tsrc/a.js', 'R090\tsrc/utils.ts\tsrc/strings.ts', 'C75\tsrc/x.js\tsrc/y.js', ''].join('\n');
+
+  assert.deepEqual(parseRenames(out), { 'src/strings.ts': 'src/utils.ts' });
+});

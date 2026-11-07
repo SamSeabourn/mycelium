@@ -11,13 +11,20 @@ export type ScanResult =
  * `dir` exists so a throwaway worktree can be scanned while `root` stays the real
  * repo — paths are relative either way, so "open file" still resolves correctly.
  */
-export async function scan(root: string, dir: string = root): Promise<ScanResult> {
+export const scan = async (root: string, dir: string = root): Promise<ScanResult> => {
   try {
     const res = await madge(dir, {
       fileExtensions: ['js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs'],
       // madge yields repo-relative paths ("dist/main.js"), so these must anchor
       // on start-or-slash — a leading `/` would never match anything.
-      excludeRegExp: [/(^|\/)node_modules\//, /(^|\/)dist\//, /\.min\.js$/],
+      excludeRegExp: [
+        /(^|\/)node_modules\//,
+        /(^|\/)dist\//,
+        /\.min\.js$/,
+        // Tests call into the app but are not part of it; on the map they are noise.
+        /(^|\/)(test|tests|__tests__)\//,
+        /\.(test|spec)\.[cm]?[jt]sx?$/,
+      ],
     });
     const graph = res.obj() as Record<string, string[]>;
     if (Object.keys(graph).length === 0) {
@@ -27,4 +34,4 @@ export async function scan(root: string, dir: string = root): Promise<ScanResult
   } catch (e) {
     return { ok: false, error: `Scan failed: ${(e as Error).message}` };
   }
-}
+};

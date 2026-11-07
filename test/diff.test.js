@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseUnified, sliceRows, sliceLines, sidesUsed } = require('../dist/diff.js');
+const { parseUnified, sliceRows, sliceLines, sidesUsed, fadeFor } = require('../dist/diff.js');
 
 const unified = (...lines) => lines.join('\n');
 
@@ -149,4 +149,24 @@ test('sidesUsed reports both sides for a real edit', () => {
   const rows = [{ kind: 'change', leftNo: 5, left: 'was', rightNo: 5, right: 'now' }];
 
   assert.deepEqual(sidesUsed(rows), { left: true, right: true });
+});
+
+test('sliceRows slices a deleted function by its base span alone', () => {
+  // Deleted: no compare-side span, so the left side is the only guide.
+  const rows = sliceRows(wholeFile, undefined, [20, 22]);
+
+  assert.deepEqual(rows.map((r) => r.leftNo), [20, 21, 22]);
+});
+
+test('fadeFor keeps changes lit and dims unchanged rows by distance', () => {
+  const ctx = (n) => ({ kind: 'context', leftNo: n, rightNo: n, text: '' });
+  const chg = { kind: 'change', leftNo: 1, left: 'a', rightNo: 1, right: 'b' };
+  const rows = [chg, ...Array.from({ length: 12 }, (_, i) => ctx(i + 2))];
+  const fade = fadeFor(rows);
+
+  assert.equal(fade[0], 1); // the change
+  assert.equal(fade[1], 1); // right next to it
+  for (let i = 2; i < fade.length; i++) assert.ok(fade[i] <= fade[i - 1]);
+  assert.equal(fade[12], 0.3); // far away: floor
+  assert.deepEqual(fadeFor([ctx(1), ctx(2)]), [1, 1]); // nothing changed: nothing dimmed
 });

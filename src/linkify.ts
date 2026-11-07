@@ -5,8 +5,7 @@ const IDENT = /[A-Za-z_$][\w$]*/g;
 const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-const colour = (t: LinkTarget) =>
-  t.change === 'A' ? 'fn-added' : t.change ? 'fn-modified' : 'fn-plain';
+const colour = (t: LinkTarget) => `fn-${statusClass(t.change)}`;
 
 const STATUS: Record<string, string> = {
   A: '+ added',
@@ -22,7 +21,7 @@ const tip = statusLabel;
 
 /** Class suffix for the status colour, shared by tooltips, tags and links. */
 export const statusClass = (change?: 'A' | 'M' | 'D' | 'R') =>
-  change === 'A' ? 'added' : change ? 'modified' : 'plain';
+  change === 'A' ? 'added' : change === 'D' ? 'deleted' : change ? 'modified' : 'plain';
 
 /**
  * Wrap known function names in a line of code so they can be coloured and clicked.
@@ -44,24 +43,30 @@ export const statusClass = (change?: 'A' | 'M' | 'D' | 'R') =>
 export type LinkHit = { start: number; end: number; target: LinkTarget };
 
 /** Where the links go. Pure, so the matching rules stay testable without a DOM. */
-export function findLinks(text: string, targets: Map<string, LinkTarget>): LinkHit[] {
+export const findLinks = (text: string, targets: Map<string, LinkTarget>): LinkHit[] => {
   const hits: LinkHit[] = [];
-  if (targets.size === 0) return hits;
+  if (targets.size === 0) {
+    return hits;
+  }
 
   IDENT.lastIndex = 0;
   for (let m = IDENT.exec(text); m !== null; m = IDENT.exec(text)) {
     const target = targets.get(m[0]);
-    if (!target) continue;
+    if (!target) {
+      continue;
+    }
     const end = m.index + m[0].length;
     // A call site, not a mention in a string, comment or regex.
-    if (!/^\s*\(/.test(text.slice(end))) continue;
+    if (!/^\s*\(/.test(text.slice(end))) {
+      continue;
+    }
     hits.push({ start: m.index, end, target });
   }
 
   return hits;
-}
+};
 
-export function linkifyCode(text: string, targets: Map<string, LinkTarget>): string {
+export const linkifyCode = (text: string, targets: Map<string, LinkTarget>): string => {
   let out = '';
   let last = 0;
 
@@ -74,7 +79,7 @@ export function linkifyCode(text: string, targets: Map<string, LinkTarget>): str
   }
 
   return out + esc(text.slice(last));
-}
+};
 
 /**
  * Wrap call sites in anchors inside already-highlighted markup.
@@ -85,8 +90,10 @@ export function linkifyCode(text: string, targets: Map<string, LinkTarget>): str
  * the "(" outside it, so a per-node lookahead would never find the paren and no link
  * would ever be created.
  */
-export function linkifyElement(root: ParentNode, targets: Map<string, LinkTarget>): void {
-  if (targets.size === 0) return;
+export const linkifyElement = (root: ParentNode, targets: Map<string, LinkTarget>): void => {
+  if (targets.size === 0) {
+    return;
+  }
 
   const walker = document.createTreeWalker(root as Node, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
@@ -102,7 +109,13 @@ export function linkifyElement(root: ParentNode, targets: Map<string, LinkTarget
   const byNode = new Map<Text, LinkHit[]>();
   for (const hit of findLinks(full, targets)) {
     const span = spans.find((s) => hit.start >= s.start && hit.end <= s.end);
-    if (!span) continue; // straddles two nodes; leave it rather than mangle the markup
+    if (!span) {
+      continue; // straddles two nodes; leave it rather than mangle the markup
+    }
+    // `// inlined: toStr(x)` mentions a function; it does not call it.
+    if (span.node.parentElement?.closest('.hljs-comment, .hljs-string')) {
+      continue;
+    }
     const local = { ...hit, start: hit.start - span.start, end: hit.end - span.start };
     byNode.set(span.node, [...(byNode.get(span.node) ?? []), local]);
   }
@@ -111,7 +124,9 @@ export function linkifyElement(root: ParentNode, targets: Map<string, LinkTarget
     const frag = document.createDocumentFragment();
     let last = 0;
     for (const hit of hits) {
-      if (hit.start > last) frag.append(node.data.slice(last, hit.start));
+      if (hit.start > last) {
+        frag.append(node.data.slice(last, hit.start));
+      }
       const a = document.createElement('a');
       a.className = `fn-link ${colour(hit.target)}`;
       a.dataset.node = hit.target.id;
@@ -120,7 +135,9 @@ export function linkifyElement(root: ParentNode, targets: Map<string, LinkTarget
       frag.append(a);
       last = hit.end;
     }
-    if (last < node.data.length) frag.append(node.data.slice(last));
+    if (last < node.data.length) {
+      frag.append(node.data.slice(last));
+    }
     node.replaceWith(frag);
   }
-}
+};

@@ -7,7 +7,7 @@ const SANS = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-ser
  * Colours come from the live DaisyUI theme, so the graph follows whatever
  * `data-theme` is set on <html> instead of keeping its own palette in sync by hand.
  */
-export function graphStyle(): StylesheetJson {
+export const graphStyle = (): StylesheetJson => {
   // Standard git/diff convention: green added, amber modified, red deleted. Using
   // the semantic theme slots rather than accent/secondary keeps that meaning intact
   // whichever DaisyUI theme is set.
@@ -20,6 +20,7 @@ export function graphStyle(): StylesheetJson {
   const strong = themeColor('--edge-direct');
   const addedRim = themeColor('--diff-added-rim');
   const modifiedRim = themeColor('--diff-modified-rim');
+  const removed = themeColor('--diff-removed');
 
   return [
     {
@@ -42,6 +43,8 @@ export function graphStyle(): StylesheetJson {
         'text-opacity': 0.33,
         'text-valign': 'bottom',
         'text-margin-y': 5,
+        // A clashing name carries its path on a second line.
+        'text-wrap': 'wrap',
         width: 16,
         height: 16,
       },
@@ -58,6 +61,21 @@ export function graphStyle(): StylesheetJson {
     {
       selector: 'node[change = "M"], node[change = "R"]',
       style: { 'background-color': modified, 'border-color': modifiedRim, 'border-opacity': 1, 'border-width': 1.5, opacity: 1, width: 24, height: 24, 'font-size': 13 },
+    },
+    // Deleted: a ghost of the function — dashed red outline, nothing inside.
+    {
+      selector: 'node[change = "D"]',
+      style: {
+        'background-opacity': 0,
+        'border-color': removed,
+        'border-style': 'dashed',
+        'border-width': 2,
+        'border-opacity': 1,
+        opacity: 1,
+        width: 24,
+        height: 24,
+        'font-size': 13,
+      },
     },
     {
       selector: 'edge',
@@ -84,6 +102,11 @@ export function graphStyle(): StylesheetJson {
     {
       selector: 'edge[direct = "1"]',
       style: { 'line-color': strong, 'source-arrow-color': strong, width: 1.5, 'arrow-scale': 0.7 },
+    },
+    // A call that existed at the merge base and is gone now.
+    {
+      selector: 'edge[removed = "1"]',
+      style: { 'line-color': removed, 'source-arrow-color': removed, 'line-style': 'dashed', width: 1.5 },
     },
     // Ghosts: calls into files outside the hop window. Deliberately faint and dashed
     // so they read as "there is more here" rather than as part of the diff.
@@ -132,23 +155,25 @@ export function graphStyle(): StylesheetJson {
         'z-index': 10,
       },
     },
+    // A ghost keeps its red ring when picked; ink would read as "this exists".
+    { selector: 'node[change = "D"]:selected', style: { 'border-color': removed } },
     { selector: '.dimmed', style: { opacity: 0.1 } },
   ] as StylesheetJson;
-}
+};
 
 /** Stable pseudo-random pick so a given node always draws the same way. */
-export function hashPick(id: string, buckets: number): number {
+export const hashPick = (id: string, buckets: number): number => {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
   return Math.abs(h) % buckets;
-}
+};
 
 /**
  * Bend amount for an edge, in pixels, derived from its id so it never jitters.
  * Wide enough that edges between the same pair of nodes fan apart rather than
  * stacking their arrowheads on top of each other.
  */
-export function edgeBend(id: string): number {
+export const edgeBend = (id: string): number => {
   const pick = hashPick(id, 9);
   return (pick - 4) * 16; // -64 .. 64
-}
+};

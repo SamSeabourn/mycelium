@@ -38,6 +38,9 @@ body {
 body {
   display: grid;
   grid-template-rows: auto 1fr;
+  /* Never wider than the window: an auto column would grow to fit the header's
+     unwrapped status text and push the panel off the right edge. */
+  grid-template-columns: minmax(0, 1fr);
   background: var(--color-base-100);
   color: var(--color-base-content);
   font-size: 14px;
@@ -60,6 +63,11 @@ header {
 
 #status {
   margin-left: auto;
+  /* One line; a narrow window trims it rather than doubling the header's height. */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   opacity: 0.6;
   font-size: 13px;
 }
@@ -83,9 +91,19 @@ main.wide {
 }
 
 #divider {
+  position: relative;
+  /* Above the canvas, so the widened grab area below is not swallowed by it. */
+  z-index: 5;
   cursor: col-resize;
   touch-action: none;
   background: var(--color-base-300);
+}
+/* The bar is 6px; a grab a pixel off used to start a text selection instead of a
+   drag. This invisible strip makes it 16px to hit without drawing any wider. */
+#divider::before {
+  content: '';
+  position: absolute;
+  inset: 0 -5px;
 }
 #divider:hover,
 #divider.dragging {
@@ -127,15 +145,18 @@ body.resizing {
   word-break: break-all;
 }
 
-/* Call relationships, boxed off below the code. */
+/* Call relationships, boxed off between the header and the code: what it calls on
+   the left, who calls it on the right. Stacks once the panel is too narrow. */
 #panel .refs {
-  margin-top: 16px;
+  margin: 12px 0 16px;
   background: var(--color-base-200);
   border-color: var(--edge-idle);
 }
 #panel .refs .card-body {
   padding: 12px 14px;
-  gap: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 24px;
 }
 #panel .refs h3:first-child {
   margin-top: 0;
@@ -150,7 +171,8 @@ body.resizing {
 #panel .path {
   font-size: 12px;
   opacity: 0.6;
-  word-break: break-all;
+  /* Also used for sentences: break a long path, never a word that fits. */
+  overflow-wrap: anywhere;
   margin: 0 0 8px;
 }
 #panel .actions {
@@ -202,6 +224,11 @@ table.diff {
   font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   table-layout: fixed;
 }
+/* Side by side needs room: below this the code wraps a character per line, so
+   scroll sideways instead. */
+table.diff:has(col.c-code) {
+  min-width: 520px;
+}
 table.diff td {
   padding: 0 6px;
   vertical-align: top;
@@ -230,6 +257,15 @@ tr.del td.code.left {
 tr.add td.code.right {
   background: color-mix(in oklab, var(--diff-added) 22%, var(--color-base-100));
 }
+/* Unchanged lines fade with distance from the nearest change, so the edit stands out
+   inside the whole function. Hover brings a line back to full strength to read. */
+table.diff tr.ctx td.code {
+  opacity: var(--fade, 1);
+  transition: opacity 0.2s;
+}
+table.diff tr.ctx:hover td.code {
+  opacity: 1;
+}
 /* The empty half of a pair — shaded so the eye reads it as "nothing here" rather
    than as an unstyled gap. */
 td.blank {
@@ -249,7 +285,8 @@ td.blank {
 }
 @keyframes fn-pulse {
   50% {
-    opacity: 0.9;
+    opacity: 0.6;
+    text-shadow: 0 0 6px currentColor;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -268,6 +305,9 @@ td.blank {
 }
 .fn-plain {
   color: var(--pick);
+}
+.fn-deleted {
+  color: var(--diff-removed);
 }
 
 /* highlight.js classes mapped onto the theme rather than shipping an hljs theme —
@@ -313,7 +353,7 @@ td.blank {
   background: var(--color-base-300);
   color: var(--color-base-content);
   border: 1px solid var(--edge-idle);
-  border-radius: var(--radius-field);
+  border-radius: 0;
   white-space: nowrap;
   font-weight: 600;
   box-shadow: 0 2px 8px rgb(0 0 0 / 45%);
@@ -335,7 +375,7 @@ td.blank {
 .tag {
   flex: none;
   border: 1px solid;
-  border-radius: var(--radius-field);
+  border-radius: 0;
   padding: 0 5px;
   font-size: 11px;
   font-weight: 600;
@@ -353,6 +393,20 @@ td.blank {
   border-color: var(--pick);
   color: var(--pick);
 }
+.tag-deleted {
+  border-color: var(--diff-removed);
+  color: var(--diff-removed);
+}
+/* A call that no longer happens. */
+.ref.gone .ref-name {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+/* A path only shows to tell two same-named functions apart, so it sits back. */
+.where {
+  opacity: 0.5;
+  font-size: 11px;
+}
 
 #tip.tip-added {
   border-color: var(--diff-added);
@@ -361,6 +415,10 @@ td.blank {
 #tip.tip-modified {
   border-color: var(--diff-modified);
   color: var(--diff-modified);
+}
+#tip.tip-deleted {
+  border-color: var(--diff-removed);
+  color: var(--diff-removed);
 }
 #tip.tip-plain {
   border-color: var(--pick);
@@ -378,7 +436,8 @@ header .select {
   width: 11rem;
   padding-inline-end: 1.75rem;
 }
-header .input {
+/* Plain field with the magnifier inside it; DaisyUI's label.input lays them out. */
+header .search {
   width: 14rem;
 }
 
@@ -389,8 +448,19 @@ header .input {
   border-color: var(--diff-added);
   color: oklch(20% 0.03 145);
 }
+.badge-deleted {
+  background: transparent;
+  border: 1px dashed var(--diff-removed);
+  color: var(--diff-removed);
+}
 .badge-warning {
   background: var(--diff-modified);
   border-color: var(--diff-modified);
   color: oklch(22% 0.03 82);
+}
+
+/* Softer corners on anything you can click (buttons, inputs, selects); the black
+   theme zeroes them all. Badges and tags are labels, not controls, so stay square. */
+[data-theme="black"] {
+  --radius-field: 0.5rem;
 }

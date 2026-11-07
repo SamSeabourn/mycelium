@@ -8,14 +8,16 @@ export const HOPS = 5;
  * break) and so do its imports (they explain what it now depends on). Kept free of
  * dependencies so the test can require it without a bundler or a DOM.
  */
-export function withinHops(
+export const withinHops = (
   graph: Record<string, string[]>,
   seeds: string[],
   hops: number,
-): { files: Set<string>; distance: Map<string, number> } {
+): { files: Set<string>; distance: Map<string, number> } => {
   const neighbours = new Map<string, Set<string>>();
   const link = (a: string, b: string) => {
-    if (!neighbours.has(a)) neighbours.set(a, new Set());
+    if (!neighbours.has(a)) {
+      neighbours.set(a, new Set());
+    }
     neighbours.get(a)!.add(b);
   };
 
@@ -40,7 +42,9 @@ export function withinHops(
     const next: string[] = [];
     for (const file of frontier) {
       for (const n of neighbours.get(file) ?? []) {
-        if (distance.has(n)) continue;
+        if (distance.has(n)) {
+          continue;
+        }
         distance.set(n, depth);
         next.push(n);
       }
@@ -49,5 +53,5 @@ export function withinHops(
   }
 
   return { files: new Set(distance.keys()), distance };
-}
+};
 

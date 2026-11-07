@@ -15,7 +15,7 @@ export type DiffRow =
  * consecutive removals line up against consecutive additions, and whichever run is
  * longer leaves blanks on the other side. Pure, so it is testable without a repo.
  */
-export function parseUnified(stdout: string): DiffRow[] {
+export const parseUnified = (stdout: string): DiffRow[] => {
   const rows: DiffRow[] = [];
   let oldNo = 0;
   let newNo = 0;
@@ -43,7 +43,9 @@ export function parseUnified(stdout: string): DiffRow[] {
     if (line.startsWith('@@')) {
       flush();
       const m = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/.exec(line);
-      if (!m) continue;
+      if (!m) {
+        continue;
+      }
       oldNo = Number(m[1]);
       newNo = Number(m[2]);
       inHunk = true;
@@ -53,9 +55,15 @@ export function parseUnified(stdout: string): DiffRow[] {
 
     // Everything before the first @@ is header noise — and "--- a/x" / "+++ b/x"
     // would otherwise be mistaken for content.
-    if (!inHunk) continue;
-    if (line.startsWith('\\')) continue; // "\ No newline at end of file"
-    if (line === '') continue; // trailing artefact of the split; real blanks are " "
+    if (!inHunk) {
+      continue;
+    }
+    if (line.startsWith('\\')) {
+      continue; // "\ No newline at end of file"
+    }
+    if (line === '') {
+      continue; // trailing artefact of the split; real blanks are " "
+    }
 
     if (line.startsWith('-')) {
       dels.push({ no: oldNo++, text: line.slice(1) });
@@ -72,7 +80,7 @@ export function parseUnified(stdout: string): DiffRow[] {
 
   flush();
   return rows;
-}
+};
 
 /**
  * Narrow a file's diff to one function, per side.
@@ -85,27 +93,35 @@ export function parseUnified(stdout: string): DiffRow[] {
  *
  * Hunk headers go: the panel already names the function.
  */
-export function sliceRows(
+export const sliceRows = (
   rows: DiffRow[],
-  right: [number, number],
+  right: [number, number] | undefined,
   left?: [number, number],
-): DiffRow[] {
+): DiffRow[] => {
   const within = (n: number | null, range?: [number, number]) =>
     n !== null && range !== undefined && n >= range[0] && n <= range[1];
 
   const out: DiffRow[] = [];
 
   for (const row of rows) {
-    if (row.kind === 'gap') continue;
+    if (row.kind === 'gap') {
+      continue;
+    }
 
     if (row.kind === 'context') {
-      if (within(row.rightNo, right)) out.push(row);
+      // A deleted function has no right-hand span; its unchanged lines are judged by
+      // the left side instead.
+      if (right ? within(row.rightNo, right) : within(row.leftNo, left)) {
+        out.push(row);
+      }
       continue;
     }
 
     const keepRight = within(row.rightNo, right);
     const keepLeft = within(row.leftNo, left);
-    if (!keepRight && !keepLeft) continue;
+    if (!keepRight && !keepLeft) {
+      continue;
+    }
 
     out.push({
       kind: 'change',
@@ -117,19 +133,46 @@ export function sliceRows(
   }
 
   return out;
-}
+};
+
+const FADE_FLOOR = 0.3;
+const FADE_STEP = 0.12;
+
+/**
+ * Per row, an opacity from its distance to the nearest change: 1 on or next to a
+ * change, easing down to FADE_FLOOR. Draws the eye to the edit inside a whole
+ * function. A slice with no changes at all stays fully lit.
+ */
+export const fadeFor = (rows: DiffRow[]): number[] => {
+  const dist = rows.map(() => Infinity);
+  let last = -Infinity;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].kind === 'change') {
+      last = i;
+    }
+    dist[i] = i - last;
+  }
+  last = Infinity;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].kind === 'change') {
+      last = i;
+    }
+    dist[i] = Math.min(dist[i], last - i);
+  }
+  return dist.map((d) => (d === Infinity ? 1 : Math.max(FADE_FLOOR, 1 - Math.max(0, d - 1) * FADE_STEP)));
+};
 
 export type SourceLine = { no: number; text: string };
 
 /** Lines `from`..`to` of a file, 1-based and inclusive. */
-export function sliceLines(text: string, from: number, to: number): SourceLine[] {
+export const sliceLines = (text: string, from: number, to: number): SourceLine[] => {
   const lines = text.split('\n');
   const out: SourceLine[] = [];
   for (let n = Math.max(1, from); n <= Math.min(lines.length, to); n++) {
     out.push({ no: n, text: lines[n - 1] });
   }
   return out;
-}
+};
 
 /**
  * Which sides a slice actually uses.
@@ -139,15 +182,21 @@ export function sliceLines(text: string, from: number, to: number): SourceLine[]
  * two-sided whenever a shared blank line or brace happened to fall inside its span —
  * which is most of the time.
  */
-export function sidesUsed(rows: DiffRow[]): { left: boolean; right: boolean } {
+export const sidesUsed = (rows: DiffRow[]): { left: boolean; right: boolean } => {
   let left = false;
   let right = false;
 
   for (const row of rows) {
-    if (row.kind !== 'change') continue;
-    if (row.left !== null) left = true;
-    if (row.right !== null) right = true;
+    if (row.kind !== 'change') {
+      continue;
+    }
+    if (row.left !== null) {
+      left = true;
+    }
+    if (row.right !== null) {
+      right = true;
+    }
   }
 
   return { left, right };
-}
+};

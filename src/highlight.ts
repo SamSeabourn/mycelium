@@ -15,7 +15,7 @@ hljs.registerLanguage('typescript', typescript);
  * Only `<span …>` and `</span>` appear in its output, which is why closing is just a
  * count rather than real tag matching.
  */
-export function splitHighlighted(html: string): string[] {
+export const splitHighlighted = (html: string): string[] => {
   const lines: string[] = [];
   const open: string[] = [];
   let current = '';
@@ -31,8 +31,11 @@ export function splitHighlighted(html: string): string[] {
         break;
       }
       const tag = html.slice(i, gt + 1);
-      if (tag.startsWith('</')) open.pop();
-      else open.push(tag);
+      if (tag.startsWith('</')) {
+        open.pop();
+      } else {
+        open.push(tag);
+      }
       current += tag;
       i = gt + 1;
       continue;
@@ -53,7 +56,7 @@ export function splitHighlighted(html: string): string[] {
   current += '</span>'.repeat(open.length);
   lines.push(current);
   return lines;
-}
+};
 
 /**
  * Highlight a block of code, one array entry per line.
@@ -63,7 +66,7 @@ export function splitHighlighted(html: string): string[] {
  * a construct opened before the visible slice still starts mid-air — fixing that
  * would mean shipping whole files to the renderer.
  */
-export function highlightLines(text: string): string[] {
+export const highlightLines = (text: string): string[] => {
   const html = hljs.highlight(text, { language: 'typescript', ignoreIllegals: true }).value;
   return splitHighlighted(html);
-}
+};

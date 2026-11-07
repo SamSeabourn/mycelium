@@ -6,7 +6,7 @@ import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
 import { linkifyElement, statusClass, statusLabel, type LinkTarget } from './linkify';
 import { highlightLines } from './highlight';
-import { sidesUsed } from './diff';
+import { fadeFor, sidesUsed } from './diff';
 
 cytoscape.use(fcose);
 
@@ -21,9 +21,9 @@ declare global {
         file: string;
         range?: [number, number];
         baseRange?: [number, number];
+        from?: string;
       }): Promise<FileDiff>;
       source(opts: { compare: string; file: string; range: [number, number] }): Promise<Source>;
-      openFile(relative: string): Promise<string>;
     };
   }
 }
@@ -41,6 +41,13 @@ const panel = document.getElementById('panel') as HTMLElement;
 const cyEl = document.getElementById('cy') as HTMLElement;
 const mainEl = document.querySelector('main') as HTMLElement;
 
+const BADGE: Record<ChangeStatus, string> = {
+  A: 'badge-success',
+  M: 'badge-warning',
+  D: 'badge-deleted',
+  R: 'badge-warning',
+};
+
 const CHANGE_LABEL: Record<ChangeStatus, string> = {
   A: 'added',
   M: 'modified',
@@ -50,6 +57,8 @@ const CHANGE_LABEL: Record<ChangeStatus, string> = {
 
 let cy: Core | null = null;
 let graph: Record<string, string[]> = {};
+/** caller -> callees it no longer calls; drawn as dashed red edges */
+let removed: Record<string, string[]> = {};
 let changed: Record<string, ChangeStatus> = {};
 let hop: Record<string, number> = {};
 let ghosts: Record<string, string[]> = {};
@@ -57,13 +66,17 @@ let label: Record<string, string> = {};
 let owner: Record<string, string> = {};
 let span: Record<string, [number, number]> = {};
 let baseSpan: Record<string, [number, number]> = {};
+let renamedFrom: Record<string, string> = {};
+/** Names used by more than one drawn function — the only time a path is worth showing. */
+let dupes = new Set<string>();
 
 /** Node ids are "file#name"; the diff view needs the file half. */
 const fileOf = (id: string) => owner[id] ?? id;
 
-function importersOf(file: string): string[] {
-  return Object.keys(graph).filter((k) => graph[k].includes(file));
-}
+const callersIn = (g: Record<string, string[]>, id: string) => Object.keys(g).filter((k) => g[k].includes(id));
+
+/** The file, but only when the name alone is ambiguous. */
+const pathIfDupe = (id: string) => (dupes.has(label[id] ?? '') ? fileOf(id) : '');
 
 const GHOST_PREFIX = 'ghost:';
 // Past this many hidden neighbours a node would drown in stubs, so they collapse
@@ -72,7 +85,7 @@ const GHOST_PREFIX = 'ghost:';
 // upgrade — do it when a real repo makes the aggregate feel opaque.
 const GHOST_MAX = 6;
 
-function ghostElements(): ElementDefinition[] {
+const ghostElements = (): ElementDefinition[] => {
   const out: ElementDefinition[] = [];
 
   for (const [parent, hidden] of Object.entries(ghosts)) {
@@ -93,9 +106,9 @@ function ghostElements(): ElementDefinition[] {
   }
 
   return out;
-}
+};
 
-function toElements(g: Record<string, string[]>): ElementDefinition[] {
+const toElements = (g: Record<string, string[]>): ElementDefinition[] => {
   // Build the node set from keys AND values: a dep that only ever appears as an
   // edge target still needs a node, or cytoscape silently drops the edge.
   const ids = new Set<string>();
@@ -103,11 +116,16 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
     ids.add(file);
     for (const d of deps) ids.add(d);
   }
+  for (const [file, deps] of Object.entries(removed)) {
+    ids.add(file);
+    for (const d of deps) ids.add(d);
+  }
 
   const nodes: ElementDefinition[] = [...ids].map((id) => ({
     data: {
       id,
-      label: label[id] ?? id.split('/').pop() ?? id,
+      // Two lines for a clashing name: the path underneath, in the label's faint ink.
+      label: (label[id] ?? id) + (pathIfDupe(id) ? `\n${pathIfDupe(id)}` : ''),
       change: changed[id] ?? '',
       hop: String(hop[id] ?? 0),
     },
@@ -123,19 +141,28 @@ function toElements(g: Record<string, string[]>): ElementDefinition[] {
     }),
   );
 
-  return [...nodes, ...edges, ...ghostElements()];
-}
+  const gone: ElementDefinition[] = Object.entries(removed).flatMap(([file, deps]) =>
+    deps.map((dep) => {
+      const id = `${file}-x->${dep}`;
+      return { data: { id, source: file, target: dep, bend: edgeBend(id), removed: '1' } };
+    }),
+  );
 
-type Ref = { id: string; name: string; where?: string; change?: ChangeStatus };
+  return [...nodes, ...edges, ...gone, ...ghostElements()];
+};
 
-function fileList(title: string, entries: Ref[]): string {
+type Ref = { id: string; name: string; where?: string; change?: ChangeStatus; gone?: boolean };
+
+const fileList = (title: string, entries: Ref[]): string => {
   const count = `<span class="badge badge-sm badge-ghost">${entries.length}</span>`;
-  if (entries.length === 0) return `<h3>${title} ${count}</h3><p class="path">none</p>`;
+  if (entries.length === 0) {
+    return `<h3>${title} ${count}</h3><p class="path">none</p>`;
+  }
 
   const items = entries
     .map(
       (e) =>
-        `<li><a class="ref" data-node="${esc(e.id)}">` +
+        `<li><a class="ref${e.gone ? ' gone' : ''}" data-node="${esc(e.id)}"${e.gone ? ' title="call removed"' : ''}>` +
         `<span class="tag tag-${statusClass(e.change)}">${esc(statusLabel({ id: e.id, change: e.change }))}</span>` +
         `<span class="ref-name">${esc(e.name)}</span>` +
         (e.where ? `<span class="where">${esc(e.where)}</span>` : '') +
@@ -144,7 +171,7 @@ function fileList(title: string, entries: Ref[]): string {
     .join('');
 
   return `<h3>${title} ${count}</h3><ul class="list">${items}</ul>`;
-}
+};
 
 let diffOpen = false;
 
@@ -161,7 +188,7 @@ let diffOpen = false;
 let antsFrame = 0;
 let antsOffset = 0;
 
-function marchAnts() {
+const marchAnts = () => {
   const selected = cy?.$(':selected');
   if (!selected || selected.empty()) {
     antsFrame = 0;
@@ -170,25 +197,57 @@ function marchAnts() {
   antsOffset -= 0.22;
   selected.style('border-dash-offset', antsOffset);
   antsFrame = requestAnimationFrame(marchAnts);
-}
+};
 
-function startAnts() {
+const startAnts = () => {
   // Same courtesy the CSS pulse gets: the ring still shows, it just holds still.
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  if (antsFrame === 0) antsFrame = requestAnimationFrame(marchAnts);
-}
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return;
+  }
+  if (antsFrame === 0) {
+    antsFrame = requestAnimationFrame(marchAnts);
+  }
+};
 
-function stopAnts() {
-  if (antsFrame !== 0) cancelAnimationFrame(antsFrame);
+const stopAnts = () => {
+  if (antsFrame !== 0) {
+    cancelAnimationFrame(antsFrame);
+  }
   antsFrame = 0;
-}
+};
 
-function setWide(on: boolean) {
+/** Graph column width the viewport was last laid out for. */
+let graphW = 0;
+
+/**
+ * Tell cytoscape the column changed width, keeping what was in the middle in the
+ * middle. A bare resize() pins the top-left corner, so widening the panel slid half
+ * the map out of view.
+ */
+const resizeGraph = () => {
+  if (!cy) {
+    return;
+  }
+  const w = cyEl.clientWidth;
+  cy.resize();
+  cy.panBy({ x: (w - graphW) / 2, y: 0 });
+  graphW = w;
+};
+
+const setWide = (on: boolean) => {
   diffOpen = on;
   mainEl.classList.toggle('wide', on);
-  // The container just changed width; cytoscape only notices if told.
-  cy?.resize();
-}
+  resizeGraph();
+};
+
+/** Bring a picked node into view — after the panel has settled on its width. */
+const centreOn = (id: string) => {
+  const node = cy?.$id(id);
+  if (!cy || !node || node.empty()) {
+    return;
+  }
+  cy.animate({ center: { eles: node }, duration: 200 });
+};
 
 /**
  * Hover tooltip for diff links.
@@ -213,26 +272,30 @@ const placeTip = (e: MouseEvent) => {
 
 panel.addEventListener('mouseover', (e) => {
   const link = (e.target as HTMLElement).closest<HTMLElement>('.fn-link');
-  if (!link?.dataset.tip) return;
+  if (!link?.dataset.tip) {
+    tip.hidden = true;
+    return;
+  }
   tip.textContent = link.dataset.tip;
   // Border takes the status colour. Read from the link's own class rather than a
   // second data attribute — it already carries the status.
-  tip.className = link.classList.contains('fn-added')
-    ? 'tip-added'
-    : link.classList.contains('fn-modified')
-      ? 'tip-modified'
-      : 'tip-plain';
+  const kind = [...link.classList].find((c) => c.startsWith('fn-') && c !== 'fn-link')?.slice(3);
+  tip.className = `tip-${kind ?? 'plain'}`;
   tip.hidden = false;
   placeTip(e);
 });
 
 panel.addEventListener('mousemove', (e) => {
-  if (!tip.hidden) placeTip(e);
+  if (!tip.hidden) {
+    placeTip(e);
+  }
 });
 
 panel.addEventListener('mouseout', (e) => {
   const to = (e.relatedTarget as HTMLElement | null)?.closest?.('.fn-link');
-  if (!to) tip.hidden = true;
+  if (!to) {
+    tip.hidden = true;
+  }
 });
 
 // Delegated: the panel's innerHTML is rebuilt on every selection, so a listener bound
@@ -240,18 +303,22 @@ panel.addEventListener('mouseout', (e) => {
 panel.addEventListener('click', (e) => {
   const link = (e.target as HTMLElement).closest<HTMLElement>('[data-node]');
   const target = link?.dataset.node;
-  if (!target || !cy) return;
+  if (!target || !cy) {
+    return;
+  }
 
   const node = cy.$id(target);
-  if (node.empty()) return;
+  if (node.empty()) {
+    return;
+  }
 
   cy.elements().unselect();
   node.select();
   startAnts();
+  showFile(target);
   // Centre it — the target is often off-screen, and without this the graph looks
   // like nothing happened.
-  cy.animate({ center: { eles: node }, duration: 200 });
-  showFile(target);
+  centreOn(target);
 });
 
 // Drag the divider to size the panel. Pointer capture keeps the events coming even
@@ -271,7 +338,9 @@ divider.addEventListener('pointerdown', (e) => {
 });
 
 divider.addEventListener('pointermove', (e) => {
-  if (!divider.hasPointerCapture(e.pointerId)) return;
+  if (!divider.hasPointerCapture(e.pointerId)) {
+    return;
+  }
 
   // The divider is 6px wide and sits left of the panel, so the panel's width is
   // measured from the divider's centre — without this the bar drifts off the cursor.
@@ -283,20 +352,24 @@ divider.addEventListener('pointermove', (e) => {
 
   // Pointer events outrun frames. Coalescing to one resize per frame keeps a fast
   // drag smooth — cytoscape re-renders the whole canvas on every resize() call.
-  if (resizeQueued) return;
+  if (resizeQueued) {
+    return;
+  }
   resizeQueued = true;
   requestAnimationFrame(() => {
     resizeQueued = false;
-    cy?.resize();
+    resizeGraph();
   });
 });
 
 const endDrag = (e: PointerEvent) => {
-  if (!divider.hasPointerCapture(e.pointerId)) return;
+  if (!divider.hasPointerCapture(e.pointerId)) {
+    return;
+  }
   divider.releasePointerCapture(e.pointerId);
   divider.classList.remove('dragging');
   document.body.classList.remove('resizing');
-  cy?.resize();
+  resizeGraph();
 };
 
 divider.addEventListener('pointerup', endDrag);
@@ -306,7 +379,7 @@ divider.addEventListener('pointercancel', endDrag);
 // Double-click restores the automatic width for the current view.
 divider.addEventListener('dblclick', () => {
   mainEl.style.removeProperty('--panel-w');
-  cy?.resize();
+  resizeGraph();
 });
 
 /**
@@ -314,10 +387,10 @@ divider.addEventListener('dblclick', () => {
  * from the resolved call graph rather than guessed from the text, so `const` and
  * local variables never become links.
  */
-function linkTargets(id: string): Map<string, LinkTarget> {
+const linkTargets = (id: string): Map<string, LinkTarget> => {
   const targets = new Map<string, LinkTarget>();
 
-  for (const callee of graph[id] ?? []) {
+  for (const callee of [...(graph[id] ?? []), ...(removed[id] ?? [])]) {
     const name = label[callee] ?? callee;
     // A method label is "Class.method"; the call site says `method`.
     const bare = name.includes('.') ? name.slice(name.indexOf('.') + 1) : name;
@@ -327,9 +400,9 @@ function linkTargets(id: string): Map<string, LinkTarget> {
   // The function's own name is deliberately left plain: colouring it made the
   // signature look like a link to somewhere, when it is where you already are.
   return targets;
-}
+};
 
-function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
+const diffTable = (rows: Extract<FileDiff, { ok: true }>['rows']): string => {
   // Highlight each side as one block, not line by line: a JSDoc comment or template
   // literal spanning several lines only colours correctly with its own context.
   const visible = rows.filter((r) => r.kind !== 'gap');
@@ -343,6 +416,8 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
   const right = side('right');
 
   const sides = sidesUsed(rows);
+  const fade = fadeFor(visible);
+  const ctx = (i: number) => `class="ctx" style="--fade:${fade[i]}"`;
 
   // One-sided slice (an added function, or a purely additive change): a single
   // column, not a column of blanks next to the code.
@@ -353,10 +428,12 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
     const body = visible
       .map((row, i) => {
         const text = row.kind === 'context' ? row.text : only === 'right' ? row.right : row.left;
-        if (text === null) return '';
+        if (text === null) {
+          return '';
+        }
         const no = only === 'right' ? row.rightNo : row.leftNo;
-        const cls = row.kind === 'context' ? '' : only === 'right' ? 'add' : 'del';
-        return `<tr class="${cls}"><td class="no">${no ?? ''}</td><td class="code ${only}">${lines[i] ?? ''}</td></tr>`;
+        const attrs = row.kind === 'context' ? ctx(i) : `class="${only === 'right' ? 'add' : 'del'}"`;
+        return `<tr ${attrs}><td class="no">${no ?? ''}</td><td class="code ${only}">${lines[i] ?? ''}</td></tr>`;
       })
       .join('');
     const cols = '<colgroup><col class="c-no" /><col class="c-code-full" /></colgroup>';
@@ -371,7 +448,7 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
   const body = visible
     .map((row, i) => {
       if (row.kind === 'context') {
-        return `<tr>${cell(row.leftNo, left[i] ?? '', 'left')}${cell(row.rightNo, right[i] ?? '', 'right')}</tr>`;
+        return `<tr ${ctx(i)}>${cell(row.leftNo, left[i] ?? '', 'left')}${cell(row.rightNo, right[i] ?? '', 'right')}</tr>`;
       }
       const cls = [row.left !== null ? 'del' : '', row.right !== null ? 'add' : ''].join(' ').trim();
       return (
@@ -388,12 +465,14 @@ function diffTable(rows: Extract<FileDiff, { ok: true }>['rows']): string {
   const cols =
     '<colgroup><col class="c-no" /><col class="c-code" /><col class="c-no" /><col class="c-code" /></colgroup>';
   return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
-}
+};
 
-async function showSource(id: string) {
+const showSource = async (id: string) => {
   const host = document.getElementById('diff-body');
   const range = span[id];
-  if (!host || !range) return;
+  if (!host || !range) {
+    return;
+  }
 
   host.innerHTML = '<p class="path">Loading…</p>';
   const result = await window.diffish.source({
@@ -417,11 +496,13 @@ async function showSource(id: string) {
   const cols = '<colgroup><col class="c-no" /><col class="c-code-full" /></colgroup>';
   host.innerHTML = `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
   linkifyElement(host, linkTargets(id));
-}
+};
 
-async function showDiff(id: string) {
+const showDiff = async (id: string) => {
   const host = document.getElementById('diff-body');
-  if (!host) return;
+  if (!host) {
+    return;
+  }
 
   host.innerHTML = '<p class="path">Loading…</p>';
   const result = await window.diffish.fileDiff({
@@ -433,6 +514,7 @@ async function showDiff(id: string) {
     // for a new function, which is what keeps its left column clean.
     range: span[id],
     baseRange: baseSpan[id],
+    from: renamedFrom[fileOf(id)],
   });
 
   if (!result.ok) {
@@ -444,9 +526,9 @@ async function showDiff(id: string) {
       ? '<p class="path">No changes inside this function between the selected branches.</p>'
       : diffTable(result.rows);
   linkifyElement(host, linkTargets(id));
-}
+};
 
-function showGhost(id: string) {
+const showGhost = (id: string) => {
   const [parent, name] = id.slice(GHOST_PREFIX.length).split('|');
   const hidden = ghosts[parent] ?? [];
 
@@ -458,46 +540,53 @@ function showGhost(id: string) {
       : `<h2>${esc(name.includes('#') ? name.slice(name.indexOf('#') + 1) : name)}</h2>
          <p class="path">Defined in <strong>${esc(name.split('#')[0])}</strong>, outside the ${HOPS}-hop window. Called by ${esc(label[parent] ?? parent)}.</p>`;
 
-  if (diffOpen) setWide(false);
-}
+  if (diffOpen) {
+    setWide(false);
+  }
+};
 
-function showFile(id: string) {
-  if (id.startsWith(GHOST_PREFIX)) return showGhost(id);
+const showFile = (id: string) => {
+  // The panel is about to be rebuilt; a link removed from under the cursor never
+  // gets a mouseout, so its tooltip would otherwise stay on screen.
+  tip.hidden = true;
+  if (id.startsWith(GHOST_PREFIX)) {
+    return showGhost(id);
+  }
 
   const state = changed[id]
-    ? `<span class="badge badge-sm ${changed[id] === 'A' ? 'badge-success' : 'badge-warning'}">${CHANGE_LABEL[changed[id]]}</span>`
+    ? `<span class="badge badge-sm ${BADGE[changed[id]]}">${CHANGE_LABEL[changed[id]]}</span>`
     : '<span class="badge badge-sm badge-ghost">no changes</span>';
 
   const hasDiff = changed[id] !== undefined;
   // With no diff there is still a body worth reading, so the panel shows the source.
   const hasSource = !hasDiff && span[id] !== undefined;
-  const file = fileOf(id);
+  const pretty = (ids: string[], gone = false): Ref[] =>
+    ids.map((i) => ({ id: i, name: label[i] ?? i, where: pathIfDupe(i), change: changed[i], gone }));
 
-  const pretty = (ids: string[]): Ref[] =>
-    ids.map((i) => ({ id: i, name: label[i] ?? i, where: owner[i], change: changed[i] }));
-
-  // Header first, on one line: status, file, and what is being compared. The diff
-  // follows, and the call relationships sit under it in their own card.
+  // The function is the subject: status and name. Its file only appears when another
+  // drawn function shares the name.
+  const where = pathIfDupe(id);
   const head = `
     <div class="head">
+      <strong>${esc(label[id] ?? id)}</strong>
       ${state}
-      <strong>${esc(file)}</strong>
+      ${where ? `<span class="where">${esc(where)}</span>` : ''}
       ${
         hasDiff || hasSource
-          ? `<span class="opacity-60">${hasDiff ? `${esc(baseSel.value)} … ${esc(compareSel.value)}` : esc(compareSel.value)}${span[id] ? ` · lines ${span[id][0]}-${span[id][1]}` : ''}</span>`
+          ? `<span class="opacity-60">${hasDiff ? `${esc(baseSel.value)} … ${esc(compareSel.value)}` : esc(compareSel.value)}</span>`
           : ''
       }
     </div>`;
 
   panel.innerHTML = `
     ${head}
-    <div id="diff-body"></div>
     <div class="card card-border refs">
       <div class="card-body">
-        ${fileList('Calls Internally', pretty(graph[id] ?? []))}
-        ${fileList('Callsites', pretty(importersOf(id)))}
+        <div>${fileList('Calls Internally', [...pretty(graph[id] ?? []), ...pretty(removed[id] ?? [], true)])}</div>
+        <div>${fileList('Callsites', [...pretty(callersIn(graph, id)), ...pretty(callersIn(removed, id), true)])}</div>
       </div>
     </div>
+    <div id="diff-body"></div>
   `;
 
   // Clicking a changed node in the graph is the whole gesture — the diff opens
@@ -511,9 +600,9 @@ function showFile(id: string) {
   } else if (diffOpen) {
     setWide(false);
   }
-}
+};
 
-function summary(missing: string[]): string {
+const summary = (): string => {
   const counts = Object.values(changed).reduce<Record<string, number>>((acc, c) => {
     acc[c] = (acc[c] ?? 0) + 1;
     return acc;
@@ -522,24 +611,28 @@ function summary(missing: string[]): string {
   const legend = `<div class="legend">
       <span class="badge badge-sm badge-success">added ${counts.A ?? 0}</span>
       <span class="badge badge-sm badge-warning">modified ${(counts.M ?? 0) + (counts.R ?? 0)}</span>
+      <span class="badge badge-sm badge-deleted">deleted ${counts.D ?? 0}</span>
       <span class="badge badge-sm badge-ghost">related</span>
     </div>`;
 
-  const deleted =
-    missing.length > 0
-      ? `<h3>Deleted files <span class="badge badge-sm badge-ghost">${missing.length}</span></h3>
-         <p class="path">Not on the compare branch, so they have no functions to draw.</p>
-         <ul class="list">${missing.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
-      : '';
+  return `${legend}<p class="path">Click a function for details.</p>`;
+};
 
-  return `${legend}<p class="path">Click a node for details.</p>${deleted}`;
-}
+/** mulberry32 — a tiny deterministic PRNG, enough to make a layout repeatable. */
+const seeded = (seed: number): () => number => {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
 
 /**
  * Force-directed. Spreads the map out and copes with cycles, which a layered
  * layout cannot — it also has no roots to layer from once ghost stubs are in.
  */
-function layoutFor(): cytoscape.LayoutOptions {
+const layoutFor = (): cytoscape.LayoutOptions => {
   // tradeoff: quality:'proof' is the slow setting and gets heavy past ~2000 nodes.
   // Upgrade path: drop to 'default' on large graphs, then collapse by folder.
   return {
@@ -557,13 +650,17 @@ function layoutFor(): cytoscape.LayoutOptions {
     gravityRange: 4.5,
     // Disconnected pieces get packed instead of flung out, so fit() stays close in.
     packComponents: true,
+    // Labels are far wider than the dots; without this, packed loners sit a dot's
+    // width apart and their names print over each other.
+    nodeDimensionsIncludeLabels: true,
     numIter: 3500,
     padding: 40,
   } as cytoscape.LayoutOptions;
-}
+};
 
-function render(result: Extract<Analysis, { ok: true }>) {
+const render = (result: Extract<Analysis, { ok: true }>) => {
   graph = result.graph;
+  removed = result.removed;
   changed = result.changed;
   hop = result.hop;
   ghosts = result.ghosts;
@@ -571,6 +668,11 @@ function render(result: Extract<Analysis, { ok: true }>) {
   owner = result.file;
   span = result.span;
   baseSpan = result.baseSpan;
+  renamedFrom = result.from;
+
+  const seen = new Set<string>();
+  dupes = new Set<string>();
+  for (const name of Object.values(label)) (seen.has(name) ? dupes : seen).add(name);
 
   const elements = toElements(graph);
   const edgeCount = elements.filter((e) => 'source' in e.data).length;
@@ -578,14 +680,29 @@ function render(result: Extract<Analysis, { ok: true }>) {
 
   stopAnts();
   cy?.destroy();
-  cy = cytoscape({
-    container: cyEl,
-    elements,
-    style: graphStyle(),
-    layout: layoutFor(),
-  });
+  // fcose has no seed option and draws its start positions from Math.random, so the
+  // same diff laid out differently every run. Seeding it keeps the map where you left
+  // it. The layout runs synchronously (animate: false), so the swap is scoped to it.
+  // tradeoff: global Math.random swap; drop it if fcose ever grows a seed option.
+  const random = Math.random;
+  Math.random = seeded(1);
+  try {
+    cy = cytoscape({
+      container: cyEl,
+      elements,
+      style: graphStyle(),
+      layout: layoutFor(),
+    });
+  } finally {
+    Math.random = random;
+  }
+  graphW = cyEl.clientWidth;
 
-  cy.on('tap', 'node', (evt) => showFile(evt.target.id()));
+  cy.on('tap', 'node', (evt) => {
+    const id = evt.target.id();
+    showFile(id);
+    centreOn(id);
+  });
   cy.on('select', 'node', startAnts);
 
   const changedCount = Object.keys(changed).length;
@@ -595,19 +712,29 @@ function render(result: Extract<Analysis, { ok: true }>) {
     `${changedCount} changed, ${real - changedCount} related functions — ${edgeCount} calls` +
     (ghostCount > 0 ? ` · ${ghostCount} out of scope` : '');
 
-  panel.innerHTML = summary(result.missing);
+  panel.innerHTML = summary();
   search.value = '';
-}
+};
 
-async function analyse() {
+let analyseRun = 0;
+
+const analyse = async () => {
   // No branches means no repo — running git anyway is what dumped its usage screen.
-  if (!baseSel.value || !compareSel.value) return;
+  if (!baseSel.value || !compareSel.value) {
+    return;
+  }
 
   status.textContent = 'Analysing…';
-  const result = await window.diffish.analyse({
-    base: baseSel.value,
-    compare: compareSel.value,
-  });
+  const run = ++analyseRun;
+  // A throw in main rejects this call. Without the catch the status sat on
+  // "Analysing…" forever with no hint that anything had failed.
+  const result: Analysis = await window.diffish
+    .analyse({ base: baseSel.value, compare: compareSel.value })
+    .catch((e: Error) => ({ ok: false, error: `Analysis failed: ${e.message}` }));
+  // A newer pick started while this one ran; its answer is the one to show.
+  if (run !== analyseRun) {
+    return;
+  }
 
   if (!result.ok) {
     status.textContent = 'Nothing to show';
@@ -618,9 +745,9 @@ async function analyse() {
     return;
   }
   render(result);
-}
+};
 
-function fillBranches(all: string[], base: string, current: string) {
+const fillBranches = (all: string[], base: string, current: string) => {
   const options = (selected: string) =>
     all
       .map((b) => `<option value="${esc(b)}"${b === selected ? ' selected' : ''}>${esc(b)}</option>`)
@@ -630,11 +757,13 @@ function fillBranches(all: string[], base: string, current: string) {
   compareSel.innerHTML = options(current);
   baseSel.disabled = all.length === 0;
   compareSel.disabled = all.length === 0;
-}
+};
 
 openBtn.addEventListener('click', async () => {
   const project = await window.diffish.pickProject();
-  if (project === null) return;
+  if (project === null) {
+    return;
+  }
 
   fillBranches(project.branches, project.base, project.current);
 
@@ -657,13 +786,17 @@ compareSel.addEventListener('change', analyse);
 
 // Visual filter only — never re-runs the layout, so nodes keep their positions.
 search.addEventListener('input', () => {
-  if (!cy) return;
+  if (!cy) {
+    return;
+  }
   const term = search.value.trim().toLowerCase();
   if (!term) {
     cy.elements().removeClass('dimmed');
     return;
   }
-  const matches = cy.nodes().filter((n) => n.id().toLowerCase().includes(term));
+  // The name only — matching the id would light up every function in a file whose
+  // path happens to contain the term.
+  const matches = cy.nodes().filter((n) => (label[n.id()] ?? '').toLowerCase().includes(term));
   cy.elements().addClass('dimmed');
   matches.removeClass('dimmed');
   matches.connectedEdges().removeClass('dimmed');
