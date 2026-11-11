@@ -1,4 +1,4 @@
-# diffish — file-level dependency graph explorer
+# mycelium — file-level dependency graph explorer
 
 **Date:** 2026-09-05
 **Status:** Approved for implementation
@@ -16,7 +16,7 @@ are explicitly out of scope here, but the design keeps a seam for them (see
 ## Non-goals
 
 - Function-level or symbol-level call graphs (next feature)
-- Editing, refactoring, or writing to the scanned repository — diffish is read-only
+- Editing, refactoring, or writing to the scanned repository — mycelium is read-only
 - Watch mode / live rescan on file change
 - Persisted sessions, saved layouts, or project history
 - Folder collapse / expand-on-click aggregation
@@ -81,7 +81,7 @@ touches `fs`, `path`, or `child_process`.
 - `ipcMain.handle('open-file', path)` → `shell.openPath`
 - `scan(dir)` is exported so the test can call it without launching Electron
 
-**`src/preload.ts`** — `contextBridge.exposeInMainWorld('diffish', { pickProject, openFile })`.
+**`src/preload.ts`** — `contextBridge.exposeInMainWorld('mycelium', { pickProject, openFile })`.
 No logic. Two `ipcRenderer.invoke` wrappers.
 
 **`src/renderer.ts`** — owns the graph and the DOM.
