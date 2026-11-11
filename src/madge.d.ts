@@ -7,6 +7,7 @@ declare module 'madge' {
   interface MadgeOptions {
     fileExtensions?: string[];
     excludeRegExp?: RegExp[];
+    tsConfig?: string | object;
   }
   export default function madge(path: string, options?: MadgeOptions): Promise<MadgeInstance>;
 }

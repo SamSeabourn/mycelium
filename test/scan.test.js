@@ -42,3 +42,30 @@ test('scanOffThread gives the same graph as scan, from a worker', async () => {
 
   assert.deepEqual(await scanOffThread(script, dir), await scan(dir));
 });
+
+test('parseJsonc reads tsconfig comments and trailing commas without eating "/*" in strings', () => {
+  const { parseJsonc } = require('../dist/scan.js');
+  assert.deepEqual(parseJsonc('{ // c\n "paths": { "@/*": ["./src/*"], }, /* b */ "s": "a//b", }'), {
+    paths: { '@/*': ['./src/*'] },
+    s: 'a//b',
+  });
+});
+
+test('a TSX app maps through @/ aliases and barrel index files', async () => {
+  const fs = require('node:fs');
+  const { buildFunctionGraph } = require('../dist/functions.js');
+  const dir = path.join(__dirname, 'tsx-fixture');
+  const result = await scan(dir);
+  assert.ok(result.ok);
+  const files = Object.keys(result.graph);
+  const fns = buildFunctionGraph(files, result.graph, (f) => fs.readFileSync(path.join(dir, f), 'utf8'));
+  assert.deepEqual(fns.graph['src/app/page.tsx#Page'].sort(), [
+    'src/components/Button/Button.tsx#Button',
+    'src/components/Card.tsx#Card',
+  ]);
+  assert.deepEqual(fns.graph['src/components/Card.tsx#Card'].sort(), [
+    'src/components/Button/Button.tsx#Button',
+    'src/lib/utils.ts#cn',
+  ]);
+  assert.deepEqual(fns.graph['src/components/Button/Button.tsx#Button'], ['src/lib/utils.ts#cn']);
+});

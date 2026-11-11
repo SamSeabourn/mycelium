@@ -19,6 +19,10 @@ export type FileFacts = {
   calls: { from: string; name: string }[];
   /** `obj.name()` where obj is not `this`; resolved later, by name, if unambiguous */
   methodCalls: { from: string; object: string; name: string }[];
+  /** `export { a as b } from './x'`: exported name -> where it really lives */
+  reexports: Record<string, { source: string; name: string }>;
+  /** `export * from './x'` sources */
+  exportAll: string[];
 };
 
 type AnyNode = { type: string; [key: string]: unknown };
@@ -152,7 +156,15 @@ export const moduleId = (file: string): string => `${file}#${path.basename(file)
 export const parseFile = (file: string, code: string): FileFacts => {
   // Null prototype: names are looked up by whatever a file calls, and a call to
   // `constructor()` must not find Object.prototype.constructor.
-  const facts: FileFacts = { defs: [], imports: Object.create(null), imported: Object.create(null), calls: [], methodCalls: [] };
+  const facts: FileFacts = {
+    defs: [],
+    imports: Object.create(null),
+    imported: Object.create(null),
+    calls: [],
+    methodCalls: [],
+    reexports: Object.create(null),
+    exportAll: [],
+  };
 
   let ast: AnyNode;
   try {
@@ -224,6 +236,24 @@ export const parseFile = (file: string, code: string): FileFacts => {
           }
         }
       }
+      return;
+    }
+
+    // Barrel files (`components/index.ts`) hold no functions, only pointers onward.
+    // Without these, every import through one dead-ends there.
+    if (n.type === 'ExportNamedDeclaration' && (n.source as AnyNode | undefined)?.value) {
+      const source = (n.source as AnyNode).value as string;
+      for (const spec of (n.specifiers ?? []) as AnyNode[]) {
+        const exported = (spec.exported as AnyNode)?.name ?? (spec.exported as AnyNode)?.value;
+        const local = (spec.local as AnyNode)?.name ?? (spec.local as AnyNode)?.value;
+        if (typeof exported === 'string' && typeof local === 'string') {
+          facts.reexports[exported] = { source, name: local };
+        }
+      }
+      return;
+    }
+    if (n.type === 'ExportAllDeclaration' && !n.exported) {
+      facts.exportAll.push((n.source as AnyNode).value as string);
       return;
     }
 
@@ -384,12 +414,23 @@ export const parseFile = (file: string, code: string): FileFacts => {
  * node resolution.
  */
 export const resolveImport = (fromFile: string, source: string, deps: string[]): string | null => {
+  const strip = (p: string) => p.replace(EXT, '');
+
   if (!source.startsWith('.')) {
-    return null; // package import — outside the graph
+    // A path alias (`@/components/Button`, `~/lib/utils`). madge already resolved it
+    // through the tsconfig, so find which of this file's deps it became by its tail,
+    // rather than re-implementing `paths` matching. A package import (`react`) never
+    // matches: node_modules is not in the graph.
+    // tradeoff: tail match; an alias with no slash (`@utils`) is not resolved.
+    const tail = source.slice(source.indexOf('/') + 1);
+    if (!source.includes('/') || !tail) {
+      return null;
+    }
+    const hits = deps.filter((d) => strip(d).endsWith(`/${tail}`) || strip(d).endsWith(`/${tail}/index`));
+    return hits.length === 1 ? hits[0] : null;
   }
 
   const target = path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), source));
-  const strip = (p: string) => p.replace(EXT, '');
 
   return (
     deps.find((d) => strip(d) === target) ??
@@ -474,6 +515,42 @@ export const buildFunctionGraph = (
     }
   }
 
+  /**
+   * Where `name`, as exported from `target`, is defined — following barrel re-exports.
+   * `ghost` when the trail leaves the parsed files: the edge is real but out of the
+   * hop window. `depth` stops an `export *` cycle.
+   */
+  const exportOf = (target: string, name: string, depth = 0): { id: string; ghost: boolean } | undefined => {
+    if (!byName.has(target)) {
+      return { id: `${target}#${name}`, ghost: true };
+    }
+    // `export { default as Button } from './Button'`: an anonymous default export is
+    // named after its file, and a named one almost always is too.
+    const own = byName.get(target)?.get(name === 'default' ? path.basename(target).replace(EXT, '') : name);
+    if (own) {
+      return { id: own, ghost: false };
+    }
+    if (depth > 8) {
+      return undefined;
+    }
+    const f = facts.get(target)!;
+    const deps = fileGraph[target] ?? [];
+    const re = f.reexports[name];
+    if (re) {
+      const next = resolveImport(target, re.source, deps);
+      return next ? exportOf(next, re.name, depth + 1) : undefined;
+    }
+    // `export *` cannot say what it carries, so only a confirmed find counts.
+    for (const source of f.exportAll) {
+      const next = resolveImport(target, source, deps);
+      const hit = next ? exportOf(next, name, depth + 1) : undefined;
+      if (hit && !hit.ghost) {
+        return hit;
+      }
+    }
+    return undefined;
+  };
+
   const graph: Record<string, string[]> = {};
   const label: Record<string, string> = {};
   const file: Record<string, string> = {};
@@ -497,22 +574,20 @@ export const buildFunctionGraph = (
         // `import { install as installMap }`: the target file knows it as `install`.
         const exported = facts_.imported[call.name] ?? call.name;
         const resolved = source ? resolveImport(f, source, fileGraph[f] ?? []) : null;
+        const hit = resolved ? exportOf(resolved, exported) : undefined;
 
-        if (resolved && !byName.has(resolved)) {
+        if (hit?.ghost) {
           // Resolves to a real file we deliberately did not parse — it fell outside
           // the hop window. Recording it keeps the graph honest about the edge
           // rather than silently dropping it.
-          const id = `${resolved}#${exported}`;
           ghosts[call.from] ??= [];
-          if (!ghosts[call.from].includes(id)) {
-            ghosts[call.from].push(id);
+          if (!ghosts[call.from].includes(hit.id)) {
+            ghosts[call.from].push(hit.id);
           }
           continue;
         }
 
-        if (resolved) {
-          target = byName.get(resolved)?.get(exported);
-        }
+        target = hit?.id;
       }
 
       if (!target || target === call.from) {
@@ -528,7 +603,8 @@ export const buildFunctionGraph = (
       // `utils.format()` off `import * as utils` — the import says exactly which file.
       const source = facts_.imports[call.object];
       const resolved = source ? resolveImport(f, source, fileGraph[f] ?? []) : null;
-      let target = resolved ? byName.get(resolved)?.get(call.name) : undefined;
+      const hit = resolved ? exportOf(resolved, call.name) : undefined;
+      let target = hit && !hit.ghost ? hit.id : undefined;
       // `cart.total()` — no types, so only trust it when exactly one class has `total`.
       // `console.log()` / `Math.max()` are globals, never ours.
       if (!target && !source && !(call.object in globalThis)) {

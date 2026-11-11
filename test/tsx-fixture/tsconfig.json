@@ -1,0 +1,7 @@
+{
+  // Vite and Next both write comments in here
+  "compilerOptions": {
+    "jsx": "react-jsx", /* and block ones */
+    "paths": { "@/*": ["./src/*"], },
+  },
+}
