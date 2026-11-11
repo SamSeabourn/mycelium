@@ -1,9 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import { scan } from './scan';
+import { scanOffThread } from './scan';
 import {
   branches,
+  fetchRemotes,
+  fetchPr,
   changedFiles,
   changedLines,
   diffRevs,
@@ -14,6 +16,16 @@ import {
   withBranchCheckout,
   type ChangeStatus,
 } from './git';
+import {
+  listPrs,
+  prComments,
+  submitReview,
+  REVIEW_EVENTS,
+  type Draft,
+  type Pr,
+  type PrComment,
+  type ReviewEvent,
+} from './github';
 import { sliceLines, type DiffRow, type SourceLine } from './diff';
 import { HOPS, withinHops } from './subgraph';
 import {
@@ -23,11 +35,15 @@ import {
   markChangedFunctions,
   parseFile,
   removedCalls,
+  type FileFacts,
   type FnDef,
 } from './functions';
 
 /** Calls away from a changed function that still get drawn: its direct callers and callees. */
 const CALL_HOPS = 1;
+
+/** One step of an analysis in flight. `done`/`total` only when there is a real count. */
+export type Progress = { run?: number; text: string; done?: number; total?: number };
 
 export type Project =
   | { ok: true; root: string; branches: string[]; current: string; base: string }
@@ -66,7 +82,8 @@ const createWindow = () => {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
-    backgroundColor: '#000000',
+    // Retro's base-100, so the window does not flash a different colour before the CSS lands.
+    backgroundColor: '#ece3ca',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -89,6 +106,7 @@ ipcMain.handle('pick-project', async (): Promise<Project> => {
   }
 
   projectRoot = picked.filePaths[0];
+  await fetchRemotes(projectRoot);
   const found = await branches(projectRoot);
 
   if (!found.ok) {
@@ -108,13 +126,22 @@ ipcMain.handle('pick-project', async (): Promise<Project> => {
 
 ipcMain.handle(
   'analyse',
-  async (_event, opts: { base: string; compare: string }): Promise<Analysis> => {
+  async (event, opts: { base: string; compare: string; run?: number }): Promise<Analysis> => {
     if (!projectRoot) {
       return { ok: false, error: 'No project open' };
     }
     if (!opts.base || !opts.compare) {
       return { ok: false, error: 'Pick a base and a compare branch' };
     }
+
+    // Where the wait is, as it happens. `run` goes back with every message so the
+    // window can drop news about an analysis it has already moved on from.
+    const say = (text: string, done?: number, total?: number) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('progress', { run: opts.run, text, done, total } satisfies Progress);
+      }
+    };
+    say('Reading the diff…');
 
     // Re-read every time: a `git checkout` in a terminal since opening would otherwise
     // have us scan the working tree as if it were the old branch.
@@ -153,7 +180,8 @@ ipcMain.handle(
     // Everything needing the compare branch on disk happens in here, so the throwaway
     // worktree is still around when the parser reads files.
     const work = async (dir: string): Promise<Analysis> => {
-      const scanned = await scan(projectRoot, dir);
+      say('Mapping imports…');
+      const scanned = await scanOffThread(path.join(__dirname, 'scan.js'), projectRoot, dir);
       if (!scanned.ok) {
         return scanned;
       }
@@ -182,31 +210,67 @@ ipcMain.handle(
         }
       };
 
-      const fns = buildFunctionGraph([...files], scanned.graph, read);
+      // The same call graph is wanted at the merge base too. Changed files read from
+      // git; everything else is identical on both sides, so the compare copy stands in.
+      const changedSources = [...seeds, ...deletedFiles];
+      const baseText = new Map<string, string | null>();
+      for (const f of changedSources) baseText.set(f, await showFile(projectRoot, since, diff.from[f] ?? f));
+      const readBase = (f: string) => (baseText.has(f) ? (baseText.get(f) ?? null) : read(f));
 
-      // Re-parse the changed files for line spans and intersect with the diff hunks.
-      // Without this every function in a touched file would look changed.
+      // Parse everything up front, one file at a time, handing the thread back between
+      // files. Babel is the slow part of what is left, and done in one loop it froze
+      // the app for as long as it ran. This way the window stays live, and there is a
+      // count to show: a real "how far along", not just "busy".
+      // Keyed by path and content, so a file that is the same on both sides, which is
+      // nearly all of them, is parsed once and answered from here the second time.
+      const parsed = new Map<string, FileFacts>();
+      const parseOnce = (f: string, code: string): FileFacts => {
+        const key = `${f}\n${code}`;
+        let facts = parsed.get(key);
+        if (!facts) {
+          facts = parseFile(f, code);
+          parsed.set(key, facts);
+        }
+        return facts;
+      };
+
+      const queue: [string, (f: string) => string | null][] = [
+        ...[...files].map((f): [string, typeof read] => [f, read]),
+        ...changedSources.map((f): [string, typeof read] => [f, readBase]),
+      ];
+      let told = 0;
+      for (const [i, [f, from]] of queue.entries()) {
+        const code = from(f);
+        if (code !== null) {
+          parseOnce(f, code);
+        }
+        // Often enough to look alive, not so often the messages are the work.
+        if (Date.now() - told > 60 || i === queue.length - 1) {
+          told = Date.now();
+          say('Reading functions…', i + 1, queue.length);
+        }
+        await new Promise((next) => setImmediate(next));
+      }
+      say('Connecting calls…');
+
+      const fns = buildFunctionGraph([...files], scanned.graph, read, parseOnce);
+
+      // The changed files' line spans, intersected with the diff hunks. Without this
+      // every function in a touched file would look changed.
       const defs: FnDef[] = [];
       for (const f of seeds) {
         const code = read(f);
         if (code !== null) {
-          defs.push(...parseFile(f, code).defs);
+          defs.push(...parseOnce(f, code).defs);
         }
       }
       const touched = new Set(markChangedFunctions(defs, lines.lines));
 
-      // The same call graph at the merge base. Changed files read from git; everything
-      // else is identical on both sides, so the compare copy stands in for it.
-      const changedSources = [...seeds, ...deletedFiles];
-      const baseText = new Map<string, string | null>();
-      for (const f of changedSources) baseText.set(f, await showFile(projectRoot, since, diff.from[f] ?? f));
       const everyFile = [...files, ...deletedFiles];
       // No madge graph exists for the base side; resolving against every known file
       // is enough for relative imports, which is all resolveImport handles anyway.
       const anyDep = Object.fromEntries(everyFile.map((f) => [f, everyFile]));
-      const base = buildFunctionGraph(everyFile, anyDep, (f) =>
-        baseText.has(f) ? (baseText.get(f) ?? null) : read(f),
-      );
+      const base = buildFunctionGraph(everyFile, anyDep, readBase, parseOnce);
 
       // Which functions existed before, so a new function inside an edited file is
       // reported as added rather than inheriting the file's "modified".
@@ -285,9 +349,11 @@ ipcMain.handle(
 
     // tradeoff: scanning the working directory is the fast path and picks up
     // uncommitted work; any other branch needs a real checkout to graph honestly.
-    return opts.compare === currentBranch
-      ? work(projectRoot)
-      : withBranchCheckout(projectRoot, opts.compare, work);
+    if (opts.compare === currentBranch) {
+      return work(projectRoot);
+    }
+    say(`Checking out ${opts.compare}…`);
+    return withBranchCheckout(projectRoot, opts.compare, work);
   },
 );
 
@@ -346,7 +412,91 @@ ipcMain.handle(
   },
 );
 
-app.whenReady().then(createWindow);
+export type Prs = { ok: true; prs: Pr[] } | { ok: false; error: string };
+
+ipcMain.handle('prs', async (): Promise<Prs> => {
+  if (!projectRoot) {
+    return { ok: false, error: 'No project open' };
+  }
+  return listPrs(projectRoot);
+});
+
+export type PickedPr = { ok: true; base: string; compare: string; sha: string } | { ok: false; error: string };
+
+/** A PR number ends up in a ref name and a URL path, so it is checked, not trusted. */
+const isPrNumber = (n: unknown): n is number => Number.isInteger(n) && (n as number) > 0;
+
+/**
+ * Turn a pull request into the two revisions the rest of the app already compares.
+ * The base is read from origin when it is there: a local `main` is only as fresh as
+ * the last pull, and a stale one drags unrelated commits into the diff.
+ */
+ipcMain.handle('pick-pr', async (_event, opts: { number: number; base: string }): Promise<PickedPr> => {
+  if (!projectRoot) {
+    return { ok: false, error: 'No project open' };
+  }
+  if (!isPrNumber(opts.number)) {
+    return { ok: false, error: 'Not a pull request number' };
+  }
+  const fetched = await fetchPr(projectRoot, opts.number);
+  if (!fetched.ok) {
+    return fetched;
+  }
+  const found = await branches(projectRoot);
+  const remote = `origin/${opts.base}`;
+  const base = found.ok && found.all.includes(remote) ? remote : opts.base;
+  return { ok: true, base, compare: fetched.ref, sha: fetched.sha };
+});
+
+export type Comments = { ok: true; comments: PrComment[] } | { ok: false; error: string };
+
+ipcMain.handle('pr-comments', async (_event, opts: { number: number }): Promise<Comments> => {
+  if (!projectRoot) {
+    return { ok: false, error: 'No project open' };
+  }
+  if (!isPrNumber(opts.number)) {
+    return { ok: false, error: 'Not a pull request number' };
+  }
+  return prComments(projectRoot, opts.number);
+});
+
+export type Submitted = { ok: true } | { ok: false; error: string };
+
+ipcMain.handle(
+  'submit-review',
+  async (
+    _event,
+    opts: { number: number; sha: string; event: ReviewEvent; body: string; drafts: Draft[] },
+  ): Promise<Submitted> => {
+    if (!projectRoot) {
+      return { ok: false, error: 'No project open' };
+    }
+    if (!isPrNumber(opts.number) || !REVIEW_EVENTS.includes(opts.event)) {
+      return { ok: false, error: 'Not a valid review' };
+    }
+    return submitReview(projectRoot, opts.number, opts.sha, opts.event, opts.body, opts.drafts);
+  },
+);
+
+app.whenReady().then(() => {
+  // macOS only, and only matters unpackaged: a packaged app takes its icon from the
+  // bundle, but `electron .` would otherwise sit in the dock as Electron's atom.
+  app.dock?.setIcon(path.join(__dirname, '..', 'assets', 'mycelium-icon.png'));
+  app.setAboutPanelOptions({
+    applicationName: 'mycelium 🍄',
+    applicationVersion: app.getVersion(),
+    // macOS prints this in brackets after the version, where a build number goes.
+    version: '🍄‍🟫',
+    credits: [
+      '🍄  🍄‍🟫  🍄',
+      'The threads under your diff.',
+      'Functions are the fruit. Calls are the mycelium.',
+      'No mushrooms were harmed in the making of this graph.',
+    ].join('\n'),
+    copyright: 'Grown, not built. 🌱',
+  });
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -4,16 +4,32 @@
  * regardless of specificity, so anything here silently wins over the theme.
  */
 
-/* Git status colours, deliberately louder than the theme's own success/warning —
-   coffee ships --color-success at chroma 0.072, which reads as olive. One pair of
-   vars so the graph canvas and the CSS cannot drift apart. */
+/* Git status colours: green added, amber modified, red deleted, whatever the theme.
+   A theme's own success/warning can be teal, orange or pink, which would read as
+   something other than git. One set of vars so the graph canvas and the CSS cannot
+   drift apart.
+
+   Every theme declares `color-scheme`, so light-dark() picks the right half without a
+   rule per theme: deeper on a light page, brighter on a dark one. */
 :root {
-  --diff-added: oklch(82% 0.25 145);
-  --diff-modified: oklch(84% 0.19 82);
-  --diff-removed: oklch(67% 0.25 26);
-  /* Selection and plain links. The black theme's --color-primary is oklch(35% 0 0),
-     a mid grey that disappears against its own background. */
-  --pick: oklch(72% 0.19 250);
+  --diff-added: light-dark(oklch(64% 0.21 145), oklch(82% 0.25 145));
+  --diff-modified: light-dark(oklch(77% 0.17 80), oklch(84% 0.19 82));
+  --diff-removed: light-dark(oklch(58% 0.23 27), oklch(67% 0.25 26));
+  /* The same three as text. A fill can be bright; a word on a light page has to be
+     darker to be read, amber most of all. On a dark page the fill colour already is. */
+  --diff-added-ink: light-dark(color-mix(in oklab, oklch(64% 0.21 145) 62%, black), oklch(82% 0.25 145));
+  --diff-modified-ink: light-dark(color-mix(in oklab, oklch(77% 0.17 80) 58%, black), oklch(84% 0.19 82));
+  --diff-removed-ink: light-dark(color-mix(in oklab, oklch(58% 0.23 27) 78%, black), oklch(67% 0.25 26));
+  /* Selection and plain links. A theme's --color-primary can be pink, gold or grey,
+     none of which says "link" or "selected". */
+  --pick: light-dark(oklch(50% 0.19 255), oklch(72% 0.19 250));
+  /* Syntax colours, same idea. */
+  --code-keyword: light-dark(oklch(46% 0.18 300), oklch(72% 0.15 300));
+  --code-string: light-dark(oklch(45% 0.13 150), oklch(74% 0.14 145));
+  --code-number: light-dark(oklch(50% 0.15 45), oklch(78% 0.13 60));
+  --code-title: light-dark(oklch(46% 0.13 245), oklch(78% 0.11 230));
+  /* The diagonal hatch behind containers. */
+  --hatch: color-mix(in oklab, var(--color-base-content) 9%, transparent);
 
   /* Graph furniture. Mixing toward the text colour rather than using base-300 keeps
      these visible on dark themes too — coffee's base-300 is *darker* than base-100,
@@ -23,10 +39,12 @@
   /* A direct edge should read as "this one matters", not glare. Full base-content is
      near-white on the black theme, which made every arrow shout. */
   --edge-direct: color-mix(in oklab, var(--color-base-content) 55%, var(--color-base-100));
-  /* Rims are the node's own colour darkened, rather than a white outline. */
-  --diff-added-rim: color-mix(in oklab, var(--diff-added) 50%, var(--color-base-100));
-  --diff-modified-rim: color-mix(in oklab, var(--diff-modified) 50%, var(--color-base-100));
-  --pick-rim: color-mix(in oklab, var(--pick) 55%, var(--color-base-100));
+  /* Rims are the node's own colour darkened, rather than a white outline: toward the
+     ink on a light theme, toward the page on a dark one. */
+  --rim-toward: light-dark(var(--color-base-content), var(--color-base-100));
+  --diff-added-rim: color-mix(in oklab, var(--diff-added) 55%, var(--rim-toward));
+  --diff-modified-rim: color-mix(in oklab, var(--diff-modified) 55%, var(--rim-toward));
+  --pick-rim: color-mix(in oklab, var(--pick) 55%, var(--rim-toward));
 }
 
 html,
@@ -55,10 +73,23 @@ header {
   border-bottom: 1px solid var(--color-base-300);
 }
 
+/* The wordmark carries its own red backing, so it sits on any theme untouched. */
+.brand {
+  flex: none;
+  height: 38px;
+}
+
 .branches {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* Thin diagonal lines, as on the DaisyUI docs: marks a surface as a container that
+   holds things rather than as content. Drawn in the ink colour at low strength, so
+   it stays faint on every theme. */
+.hatch {
+  background-image: repeating-linear-gradient(135deg, transparent 0 11px, var(--hatch) 11px 12px);
 }
 
 #status {
@@ -121,7 +152,8 @@ body.resizing {
 }
 
 #panel {
-  background: var(--color-base-100);
+  /* -color, not the shorthand: the shorthand would wipe the hatch drawn over it. */
+  background-color: var(--color-base-100);
   padding: 14px 16px;
   overflow: hidden auto;
 }
@@ -212,6 +244,8 @@ body.resizing {
   font-size: 12px;
 }
 .diff-scroll {
+  /* Solid: code is not something to read through a pattern. */
+  background: var(--color-base-100);
   overflow-x: auto;
   max-width: 100%;
   border: 1px solid var(--color-base-300);
@@ -298,16 +332,16 @@ td.blank {
   text-decoration: underline solid;
 }
 .fn-added {
-  color: var(--diff-added);
+  color: var(--diff-added-ink);
 }
 .fn-modified {
-  color: var(--diff-modified);
+  color: var(--diff-modified-ink);
 }
 .fn-plain {
   color: var(--pick);
 }
 .fn-deleted {
-  color: var(--diff-removed);
+  color: var(--diff-removed-ink);
 }
 
 /* highlight.js classes mapped onto the theme rather than shipping an hljs theme —
@@ -320,20 +354,20 @@ td.blank {
 .hljs-keyword,
 .hljs-literal,
 .hljs-type {
-  color: oklch(72% 0.15 300);
+  color: var(--code-keyword);
 }
 .hljs-string,
 .hljs-regexp,
 .hljs-template-variable {
-  color: oklch(74% 0.14 145);
+  color: var(--code-string);
 }
 .hljs-number {
-  color: oklch(78% 0.13 60);
+  color: var(--code-number);
 }
 .hljs-title,
 .hljs-title.function_,
 .hljs-built_in {
-  color: oklch(78% 0.11 230);
+  color: var(--code-title);
 }
 .hljs-attr,
 .hljs-property,
@@ -356,7 +390,7 @@ td.blank {
   border-radius: 0;
   white-space: nowrap;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 45%);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
 }
 /* Reference rows in the card: a status tag, the name, then where it lives. Same
    look as the hover tooltip so the two read as one vocabulary. */
@@ -382,20 +416,20 @@ td.blank {
   white-space: nowrap;
 }
 .tag-added {
-  border-color: var(--diff-added);
-  color: var(--diff-added);
+  border-color: var(--diff-added-ink);
+  color: var(--diff-added-ink);
 }
 .tag-modified {
-  border-color: var(--diff-modified);
-  color: var(--diff-modified);
+  border-color: var(--diff-modified-ink);
+  color: var(--diff-modified-ink);
 }
 .tag-plain {
   border-color: var(--pick);
   color: var(--pick);
 }
 .tag-deleted {
-  border-color: var(--diff-removed);
-  color: var(--diff-removed);
+  border-color: var(--diff-removed-ink);
+  color: var(--diff-removed-ink);
 }
 /* A call that no longer happens. */
 .ref.gone .ref-name {
@@ -409,16 +443,16 @@ td.blank {
 }
 
 #tip.tip-added {
-  border-color: var(--diff-added);
-  color: var(--diff-added);
+  border-color: var(--diff-added-ink);
+  color: var(--diff-added-ink);
 }
 #tip.tip-modified {
-  border-color: var(--diff-modified);
-  color: var(--diff-modified);
+  border-color: var(--diff-modified-ink);
+  color: var(--diff-modified-ink);
 }
 #tip.tip-deleted {
-  border-color: var(--diff-removed);
-  color: var(--diff-removed);
+  border-color: var(--diff-removed-ink);
+  color: var(--diff-removed-ink);
 }
 #tip.tip-plain {
   border-color: var(--pick);
@@ -434,7 +468,12 @@ td.blank {
    under it once the control is sized to its content. */
 header .select {
   width: 11rem;
-  padding-inline-end: 1.75rem;
+  /* A long name does not shrink to fit: it overflows, and DaisyUI's overflow:hidden
+     only cuts it at the border, after it has run under the arrow. Clipping at the
+     content box instead stops it where the padding starts, clear of the arrow. */
+  padding-inline-end: 2.25rem;
+  overflow: clip;
+  overflow-clip-margin: content-box;
 }
 /* Plain field with the magnifier inside it; DaisyUI's label.input lays them out. */
 header .search {
@@ -450,8 +489,8 @@ header .search {
 }
 .badge-deleted {
   background: transparent;
-  border: 1px dashed var(--diff-removed);
-  color: var(--diff-removed);
+  border: 1px dashed var(--diff-removed-ink);
+  color: var(--diff-removed-ink);
 }
 .badge-warning {
   background: var(--diff-modified);
@@ -459,8 +498,241 @@ header .search {
   color: oklch(22% 0.03 82);
 }
 
-/* Softer corners on anything you can click (buttons, inputs, selects); the black
-   theme zeroes them all. Badges and tags are labels, not controls, so stay square. */
-[data-theme="black"] {
-  --radius-field: 0.5rem;
+/* `hidden` loses to any display rule above (the flex rows in the header); it should not. */
+[hidden] {
+  display: none !important;
+}
+
+/* Branches | Pull requests is DaisyUI's boxed tabs. Its box is base-200, the same as
+   the header it sits in, so it takes the next shade down to read as a control. */
+.mode {
+  flex: none;
+  background: var(--color-base-300);
+}
+/* A PR title is a sentence, not a branch name: the control takes what room the header
+   has, and its own row shrinks first so nothing else is pushed off the edge. */
+#by-pr {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+header #pr {
+  flex: 1 1 24rem;
+  width: 24rem;
+  min-width: 10rem;
+}
+/* Which branches the PR compares. Supporting detail: small, and the first to be cut. */
+#pr-revs {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+#review {
+  flex: none;
+}
+
+/* Sits in the same grid cell as the graph, over it: the last graph stays visible but
+   stepped back, and cannot be clicked while it is about to be replaced. */
+main > #cy,
+main > #graph-busy {
+  grid-area: 1 / 1;
+}
+main > #divider {
+  grid-area: 1 / 2;
+}
+main > #panel {
+  grid-area: 1 / 3;
+}
+#graph-busy {
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 15px;
+  background: color-mix(in oklab, var(--color-base-100) 78%, transparent);
+}
+#graph-busy .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#graph-busy .spin {
+  font-size: 22px;
+}
+#graph-busy .progress {
+  width: min(320px, 60%);
+}
+/* Always there, so the line above does not jump when a count arrives or leaves. */
+#graph-busy-count {
+  min-height: 1.4em;
+  font-size: 12px;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Drawn with a border rather than DaisyUI's `loading`, which is a data: mask image
+   and so is blocked by this page's Content-Security-Policy. A fast answer should not
+   flash it: it only fades in once the wait is real. */
+.spin {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0;
+  animation:
+    spin 0.8s linear infinite,
+    spin-in 0.2s 0.15s forwards;
+}
+@keyframes spin {
+  to {
+    rotate: 1turn;
+  }
+}
+@keyframes spin-in {
+  to {
+    opacity: 1;
+  }
+}
+/* Still says "working" as a broken ring; it just holds still. */
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Review. A line number that will take a comment lights up under the cursor. */
+td.no.can {
+  cursor: pointer;
+}
+td.no.can:hover {
+  opacity: 1;
+  background: var(--pick);
+  color: var(--color-base-100);
+}
+/* Comments are prose sitting in a code table, so they take the UI font back. */
+tr.thread td,
+tr.draft td {
+  padding: 8px 10px;
+  font: 13px/1.45 system-ui, sans-serif;
+  background: var(--color-base-200);
+  border-block: 1px solid var(--color-base-300);
+}
+.comment {
+  padding: 6px 10px;
+  border-left: 2px solid var(--pick);
+  overflow-wrap: anywhere;
+}
+.comment + .comment {
+  margin-top: 8px;
+}
+.comment.pending {
+  border-left-color: var(--diff-modified);
+}
+.comment .who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+.comment .drop {
+  cursor: pointer;
+  text-decoration: underline;
+}
+tr.draft .textarea,
+dialog .textarea {
+  width: 100%;
+  font: inherit;
+}
+tr.draft .actions,
+dialog .actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+dialog {
+  width: min(520px, 90vw);
+  margin: auto;
+  padding: 18px 20px;
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+  border: 1px solid var(--edge-idle);
+  border-radius: var(--radius-box);
+}
+dialog::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+dialog h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+dialog .path {
+  font-size: 12px;
+  opacity: 0.7;
+  margin: 0 0 10px;
+}
+dialog .actions {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+#review-error:not(:empty) {
+  margin-top: 10px;
+}
+
+/* Theme picker: a palette per theme, painted in that theme's colours, name below. */
+#theme-dialog {
+  width: min(620px, 92vw);
+}
+.themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  padding: 16px;
+  /* Thirty-five of them: the list scrolls, the dialog does not outgrow the window. */
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-box);
+}
+.theme-pick {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-box);
+}
+.theme-pick:hover {
+  background: var(--color-base-100);
+}
+.theme-pick.on {
+  background: var(--color-base-100);
+  border-color: var(--color-base-content);
+  font-weight: 600;
+}
+/* The board: the theme's page colour, outlined in its own ink so a pale theme still
+   has an edge on a pale page. The svg's data-theme is what makes these resolve to
+   that theme rather than the current one. */
+.theme-pick svg path {
+  fill: var(--color-base-100);
+  stroke: var(--color-base-content);
+  stroke-width: 0.9;
+  stroke-linejoin: round;
 }

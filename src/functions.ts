@@ -13,6 +13,8 @@ export type FileFacts = {
   defs: FnDef[];
   /** local binding name -> import source string, e.g. { scan: './scan' } */
   imports: Record<string, string>;
+  /** local binding name -> the name it is exported under, for `import { a as b }` */
+  imported: Record<string, string>;
   /** caller function id -> callee names used inside it */
   calls: { from: string; name: string }[];
   /** `obj.name()` where obj is not `this`; resolved later, by name, if unambiguous */
@@ -150,7 +152,7 @@ export const moduleId = (file: string): string => `${file}#${path.basename(file)
 export const parseFile = (file: string, code: string): FileFacts => {
   // Null prototype: names are looked up by whatever a file calls, and a call to
   // `constructor()` must not find Object.prototype.constructor.
-  const facts: FileFacts = { defs: [], imports: Object.create(null), calls: [], methodCalls: [] };
+  const facts: FileFacts = { defs: [], imports: Object.create(null), imported: Object.create(null), calls: [], methodCalls: [] };
 
   let ast: AnyNode;
   try {
@@ -216,6 +218,10 @@ export const parseFile = (file: string, code: string): FileFacts => {
         const local = (spec.local as AnyNode)?.name as string;
         if (local && source) {
           facts.imports[local] = source;
+          const name = (spec.imported as AnyNode)?.name ?? (spec.imported as AnyNode)?.value;
+          if (typeof name === 'string') {
+            facts.imported[local] = name;
+          }
         }
       }
       return;
@@ -430,6 +436,9 @@ export const buildFunctionGraph = (
   files: string[],
   fileGraph: Record<string, string[]>,
   read: (file: string) => string | null,
+  // A caller that has already parsed these files hands its results back in here
+  // rather than paying for Babel twice.
+  parse: (file: string, code: string) => FileFacts = parseFile,
 ): FnGraph => {
   const facts = new Map<string, FileFacts>();
   const byName = new Map<string, Map<string, string>>(); // file -> name -> fn id
@@ -439,7 +448,7 @@ export const buildFunctionGraph = (
     if (code === null) {
       continue;
     }
-    const f = parseFile(file, code);
+    const f = parse(file, code);
     facts.set(file, f);
 
     const names = new Map<string, string>();
@@ -485,13 +494,15 @@ export const buildFunctionGraph = (
 
       if (!target) {
         const source = facts_.imports[call.name];
+        // `import { install as installMap }`: the target file knows it as `install`.
+        const exported = facts_.imported[call.name] ?? call.name;
         const resolved = source ? resolveImport(f, source, fileGraph[f] ?? []) : null;
 
         if (resolved && !byName.has(resolved)) {
           // Resolves to a real file we deliberately did not parse — it fell outside
           // the hop window. Recording it keeps the graph honest about the edge
           // rather than silently dropping it.
-          const id = `${resolved}#${call.name}`;
+          const id = `${resolved}#${exported}`;
           ghosts[call.from] ??= [];
           if (!ghosts[call.from].includes(id)) {
             ghosts[call.from].push(id);
@@ -500,7 +511,7 @@ export const buildFunctionGraph = (
         }
 
         if (resolved) {
-          target = byName.get(resolved)?.get(call.name);
+          target = byName.get(resolved)?.get(exported);
         }
       }
 

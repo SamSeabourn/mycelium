@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseUnified, sliceRows, sliceLines, sidesUsed, fadeFor } = require('../dist/diff.js');
+const { parseUnified, sliceRows, sliceLines, sidesUsed, fadeFor, commentable } = require('../dist/diff.js');
 
 const unified = (...lines) => lines.join('\n');
 
@@ -169,4 +169,28 @@ test('fadeFor keeps changes lit and dims unchanged rows by distance', () => {
   for (let i = 2; i < fade.length; i++) assert.ok(fade[i] <= fade[i - 1]);
   assert.equal(fade[12], 0.3); // far away: floor
   assert.deepEqual(fadeFor([ctx(1), ctx(2)]), [1, 1]); // nothing changed: nothing dimmed
+});
+
+test('commentable takes changes and the three lines either side, as GitHub does', () => {
+  const ctx = (n) => ({ kind: 'context', leftNo: n, rightNo: n, text: '' });
+  const rows = [
+    ctx(1),
+    ctx(2),
+    ctx(3),
+    ctx(4),
+    { kind: 'change', leftNo: 5, left: 'a', rightNo: 5, right: 'b' },
+    ctx(6),
+    ctx(7),
+    ctx(8),
+    ctx(9),
+  ];
+
+  // Lines 1 and 9 are four away from the change: outside the pull request's hunk.
+  assert.deepEqual(commentable(rows), [false, true, true, true, true, true, true, true, false]);
+});
+
+test('commentable offers nothing when the slice has no change', () => {
+  const rows = [{ kind: 'context', leftNo: 1, rightNo: 1, text: '' }];
+
+  assert.deepEqual(commentable(rows), [false]);
 });

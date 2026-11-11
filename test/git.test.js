@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseNameStatus, parseHunks, parseRenames } = require('../dist/git.js');
+const { parseNameStatus, parseHunks, parseRenames, parseBranches } = require('../dist/git.js');
 
 
 test('parseNameStatus reads add, modify and delete', () => {
@@ -36,4 +36,12 @@ test('parseRenames maps each new path back to its old one', () => {
   const out = ['M\tsrc/a.js', 'R090\tsrc/utils.ts\tsrc/strings.ts', 'C75\tsrc/x.js\tsrc/y.js', ''].join('\n');
 
   assert.deepEqual(parseRenames(out), { 'src/strings.ts': 'src/utils.ts' });
+});
+
+test('parseBranches lists local and remote branches, without the remote HEAD pointer', () => {
+  const all = parseBranches(
+    ['refs/heads/main', 'refs/heads/feat/x', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main', 'refs/remotes/origin/their-pr', ''].join('\n'),
+  );
+
+  assert.deepEqual(all, ['main', 'feat/x', 'origin/main', 'origin/their-pr']);
 });

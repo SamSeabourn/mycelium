@@ -19,8 +19,20 @@ export const toRgb = (css: string): string => {
   return `rgb(${r},${g},${b})`;
 };
 
-/** Read a DaisyUI theme variable and return it in a form cytoscape understands. */
+const probe = document.createElement('span');
+probe.hidden = true;
+document.body.appendChild(probe);
+
+/**
+ * Read a theme variable and return it in a form cytoscape understands.
+ *
+ * Through an element's `color`, not getPropertyValue: a custom property comes back as
+ * the text it was written as, and `light-dark(…)` or a nested `var()` means nothing to
+ * a canvas. As a real colour the browser resolves it against the current theme first.
+ */
 export const themeColor = (name: string): string => {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return raw ? toRgb(raw) : '#888888';
+  probe.style.color = '';
+  probe.style.color = `var(${name})`;
+  const resolved = getComputedStyle(probe).color;
+  return resolved ? toRgb(resolved) : '#888888';
 };

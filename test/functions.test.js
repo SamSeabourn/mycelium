@@ -73,6 +73,18 @@ test('buildFunctionGraph links a call across an import', () => {
   assert.equal(file['src/b.ts#helper'], 'src/b.ts');
 });
 
+test('buildFunctionGraph follows an aliased import to the exported name', () => {
+  const files = {
+    'src/a.ts': 'import { install as installMap } from "./b";\nexport const main = () => { installMap(); };',
+    'src/b.ts': 'export const install = () => {};',
+  };
+  const fileGraph = { 'src/a.ts': ['src/b.ts'], 'src/b.ts': [] };
+
+  const { graph } = buildFunctionGraph(Object.keys(files), fileGraph, (f) => files[f]);
+
+  assert.deepEqual(graph['src/a.ts#main'], ['src/b.ts#install']);
+});
+
 test('buildFunctionGraph does not invent an edge to a same-named function elsewhere', () => {
   // b.ts also has `helper`, but a.ts never imports it — no edge may appear.
   const files = { 'src/a.ts': 'export function main() { helper(); }', 'src/b.ts': 'export function helper() {}' };

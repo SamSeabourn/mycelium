@@ -1,4 +1,5 @@
 import madge from 'madge';
+import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 
 export type ScanResult =
   | { ok: true; root: string; graph: Record<string, string[]> }
@@ -35,3 +36,30 @@ export const scan = async (root: string, dir: string = root): Promise<ScanResult
     return { ok: false, error: `Scan failed: ${(e as Error).message}` };
   }
 };
+
+/**
+ * The same scan, on another thread.
+ *
+ * madge walks the whole repo in one synchronous go — seconds on a large one — and on
+ * the main thread that is seconds of an app that does not answer the mouse, which
+ * macOS reports with the spinning wait cursor. Nothing inside it can be paused from
+ * out here, so the whole thing goes where blocking costs nothing.
+ *
+ * `script` is this module as built (dist/scan.js): the worker is that file run again,
+ * taking the branch at the bottom.
+ */
+export const scanOffThread = (script: string, root: string, dir: string = root): Promise<ScanResult> => {
+  return new Promise((resolve) => {
+    const worker = new Worker(script, { workerData: { scan: { root, dir } } });
+    worker.once('message', (result: ScanResult) => {
+      resolve(result);
+      void worker.terminate();
+    });
+    worker.once('error', (e) => resolve({ ok: false, error: `Scan failed: ${e.message}` }));
+  });
+};
+
+if (!isMainThread && parentPort && workerData?.scan) {
+  const port = parentPort;
+  void scan(workerData.scan.root, workerData.scan.dir).then((result) => port.postMessage(result));
+}

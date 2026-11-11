@@ -1,18 +1,28 @@
 <!doctype html>
-<html lang="en" data-theme="black">
+<html lang="en" data-theme="retro">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
-    <title>diffish</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>mycelium</title>
     <link rel="stylesheet" href="app.css" />
   </head>
   <body>
     <header>
+      <img class="brand" src="mycelium-logo.svg" alt="mycelium" />
       <button id="open-project" class="btn btn-primary btn-sm">Open Project</button>
-      <span class="branches">
+      <div role="tablist" class="tabs tabs-box tabs-sm mode">
+        <button id="mode-branches" role="tab" class="tab tab-active">Branches</button>
+        <button id="mode-prs" role="tab" class="tab" disabled title="Open a project first">Pull requests</button>
+      </div>
+      <span id="by-branch" class="branches">
         <select id="base" class="select select-sm" disabled></select>
         <span class="opacity-50">…</span>
         <select id="compare" class="select select-sm" disabled></select>
+      </span>
+      <span id="by-pr" class="branches" hidden>
+        <select id="pr" class="select select-sm" aria-label="Pull request"></select>
+        <span id="pr-revs" class="opacity-60"></span>
+        <button id="review" class="btn btn-sm btn-primary" hidden>Review</button>
       </span>
       <label class="input input-sm search" title="Filter functions">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
@@ -22,12 +32,49 @@
         <input id="search" type="search" aria-label="Filter functions" />
       </label>
       <span id="status">Ready</span>
+      <button id="theme-btn" class="btn btn-ghost btn-sm btn-square" title="Theme" aria-label="Theme">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+          <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+          <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+          <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+        </svg>
+      </button>
     </header>
     <main>
       <div id="cy"></div>
+      <div id="graph-busy" hidden>
+        <div class="row"><span class="spin"></span><span id="graph-busy-text"></span></div>
+        <progress id="graph-busy-bar" class="progress" hidden></progress>
+        <div id="graph-busy-count"></div>
+      </div>
       <div id="divider" title="Drag to resize"></div>
-      <aside id="panel"><p class="path">Open a project to begin.</p></aside>
+      <aside id="panel" class="hatch"><p class="path">Open a project to begin.</p></aside>
     </main>
+    <dialog id="review-dialog">
+      <form method="dialog">
+        <h2>Submit review</h2>
+        <p id="review-what" class="path"></p>
+        <textarea id="review-body" class="textarea" rows="4" placeholder="Overall comment (optional)"></textarea>
+        <div id="review-error"></div>
+        <div class="actions">
+          <button class="btn btn-sm btn-ghost">Cancel</button>
+          <button type="button" data-event="COMMENT" class="btn btn-sm">Comment</button>
+          <button type="button" data-event="APPROVE" class="btn btn-sm btn-success">Approve</button>
+          <button type="button" data-event="REQUEST_CHANGES" class="btn btn-sm btn-error">Request changes</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="theme-dialog">
+      <form method="dialog">
+        <h2>Theme</h2>
+        <div id="themes" class="themes hatch"></div>
+        <div class="actions">
+          <button class="btn btn-sm">Done</button>
+        </div>
+      </form>
+    </dialog>
     <script src="renderer.js"></script>
   </body>
 </html>

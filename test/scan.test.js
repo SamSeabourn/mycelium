@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
-const { scan } = require('../dist/scan.js');
+const { scan, scanOffThread } = require('../dist/scan.js');
 
 test('scan returns the file graph with the cycle intact', async () => {
   const result = await scan(path.join(__dirname, 'fixture'));
@@ -18,7 +18,7 @@ test('scan returns the file graph with the cycle intact', async () => {
 });
 
 test('scan skips node_modules and dist', async () => {
-  // Scans diffish itself: it has both directories populated by this point,
+  // Scans mycelium itself: it has both directories populated by this point,
   // so no fixture is needed (and .gitignore would eat a fixture copy anyway).
   const result = await scan(path.join(__dirname, '..'));
 
@@ -34,4 +34,11 @@ test('scan on a directory with no JS reports an error', async () => {
 
   assert.equal(result.ok, false);
   assert.ok(result.error.length > 0);
+});
+
+test('scanOffThread gives the same graph as scan, from a worker', async () => {
+  const dir = path.join(__dirname, 'fixture');
+  const script = path.join(__dirname, '..', 'dist', 'scan.js');
+
+  assert.deepEqual(await scanOffThread(script, dir), await scan(dir));
 });

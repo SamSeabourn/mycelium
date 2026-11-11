@@ -1,16 +1,16 @@
 {
-  "name": "diffish",
+  "name": "mycelium",
   "version": "0.1.0",
   "private": true,
   "description": "Explorable file-level dependency graph for JS/TS repositories",
   "main": "dist/main.js",
   "scripts": {
     "esbuild": "node_modules/esbuild/bin/esbuild",
-    "build": "pnpm esbuild src/main.ts src/preload.ts src/scan.ts src/git.ts src/subgraph.ts src/functions.ts src/diff.ts src/linkify.ts src/highlight.ts --bundle --platform=node --packages=external --outdir=dist && pnpm esbuild src/renderer.ts --bundle --outfile=dist/renderer.js && cp src/index.html dist/ && pnpm css",
+    "build": "pnpm esbuild src/main.ts src/preload.ts src/scan.ts src/git.ts src/github.ts src/subgraph.ts src/functions.ts src/diff.ts src/linkify.ts src/highlight.ts --bundle --platform=node --packages=external --outdir=dist && pnpm esbuild src/renderer.ts --bundle --outfile=dist/renderer.js && cp src/index.html assets/mycelium-logo.svg dist/ && pnpm css",
     "start": "pnpm build && electron .",
     "check": "tsc --noEmit",
     "test": "pnpm build && node --test test/*.test.js",
-    "css": "cat node_modules/daisyui/base/reset.css node_modules/daisyui/base/properties.css node_modules/daisyui/base/svg.css node_modules/daisyui/theme/black.css node_modules/daisyui/components/button.css node_modules/daisyui/components/select.css node_modules/daisyui/components/input.css node_modules/daisyui/components/table.css node_modules/daisyui/components/badge.css node_modules/daisyui/components/card.css node_modules/daisyui/components/divider.css node_modules/daisyui/components/menu.css node_modules/daisyui/components/alert.css src/app.css > dist/app.css"
+    "css": "cat node_modules/daisyui/base/reset.css node_modules/daisyui/base/properties.css node_modules/daisyui/base/svg.css node_modules/daisyui/theme/light.css node_modules/daisyui/theme/dark.css node_modules/daisyui/theme/cupcake.css node_modules/daisyui/theme/bumblebee.css node_modules/daisyui/theme/emerald.css node_modules/daisyui/theme/corporate.css node_modules/daisyui/theme/synthwave.css node_modules/daisyui/theme/retro.css node_modules/daisyui/theme/cyberpunk.css node_modules/daisyui/theme/valentine.css node_modules/daisyui/theme/halloween.css node_modules/daisyui/theme/garden.css node_modules/daisyui/theme/forest.css node_modules/daisyui/theme/aqua.css node_modules/daisyui/theme/lofi.css node_modules/daisyui/theme/pastel.css node_modules/daisyui/theme/fantasy.css node_modules/daisyui/theme/wireframe.css node_modules/daisyui/theme/black.css node_modules/daisyui/theme/luxury.css node_modules/daisyui/theme/dracula.css node_modules/daisyui/theme/cmyk.css node_modules/daisyui/theme/autumn.css node_modules/daisyui/theme/business.css node_modules/daisyui/theme/acid.css node_modules/daisyui/theme/lemonade.css node_modules/daisyui/theme/night.css node_modules/daisyui/theme/coffee.css node_modules/daisyui/theme/winter.css node_modules/daisyui/theme/dim.css node_modules/daisyui/theme/nord.css node_modules/daisyui/theme/sunset.css node_modules/daisyui/theme/caramellatte.css node_modules/daisyui/theme/abyss.css node_modules/daisyui/theme/silk.css node_modules/daisyui/components/button.css node_modules/daisyui/components/select.css node_modules/daisyui/components/input.css node_modules/daisyui/components/table.css node_modules/daisyui/components/badge.css node_modules/daisyui/components/card.css node_modules/daisyui/components/divider.css node_modules/daisyui/components/menu.css node_modules/daisyui/components/alert.css node_modules/daisyui/components/textarea.css node_modules/daisyui/components/tab.css node_modules/daisyui/components/progress.css src/app.css > dist/app.css"
   },
   "dependencies": {
     "@babel/parser": "7.29.8",

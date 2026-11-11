@@ -1,20 +1,22 @@
 import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
-import type { Analysis, FileDiff, Project, Source } from './main';
+import type { Analysis, Comments, FileDiff, PickedPr, Progress, Project, Prs, Source, Submitted } from './main';
+import type { Draft, Pr, PrComment, ReviewEvent, Side } from './github';
 import type { ChangeStatus } from './git';
 import { edgeBend, graphStyle } from './graph-style';
 import { HOPS } from './subgraph';
 import { linkifyElement, statusClass, statusLabel, type LinkTarget } from './linkify';
 import { highlightLines } from './highlight';
-import { fadeFor, sidesUsed } from './diff';
+import { commentable, fadeFor, sidesUsed } from './diff';
 
 cytoscape.use(fcose);
 
 declare global {
   interface Window {
-    diffish: {
+    mycelium: {
       pickProject(): Promise<Project>;
-      analyse(opts: { base: string; compare: string }): Promise<Analysis>;
+      analyse(opts: { base: string; compare: string; run: number }): Promise<Analysis>;
+      onProgress(heard: (p: Progress) => void): void;
       fileDiff(opts: {
         base: string;
         compare: string;
@@ -24,6 +26,16 @@ declare global {
         from?: string;
       }): Promise<FileDiff>;
       source(opts: { compare: string; file: string; range: [number, number] }): Promise<Source>;
+      prs(): Promise<Prs>;
+      pickPr(opts: { number: number; base: string }): Promise<PickedPr>;
+      prComments(opts: { number: number }): Promise<Comments>;
+      submitReview(opts: {
+        number: number;
+        sha: string;
+        event: ReviewEvent;
+        body: string;
+        drafts: Draft[];
+      }): Promise<Submitted>;
     };
   }
 }
@@ -40,6 +52,72 @@ const status = document.getElementById('status') as HTMLElement;
 const panel = document.getElementById('panel') as HTMLElement;
 const cyEl = document.getElementById('cy') as HTMLElement;
 const mainEl = document.querySelector('main') as HTMLElement;
+const modeBranches = document.getElementById('mode-branches') as HTMLButtonElement;
+const modePrs = document.getElementById('mode-prs') as HTMLButtonElement;
+const byBranch = document.getElementById('by-branch') as HTMLElement;
+const byPr = document.getElementById('by-pr') as HTMLElement;
+const prSel = document.getElementById('pr') as HTMLSelectElement;
+const prRevs = document.getElementById('pr-revs') as HTMLElement;
+const reviewBtn = document.getElementById('review') as HTMLButtonElement;
+const reviewDialog = document.getElementById('review-dialog') as HTMLDialogElement;
+const reviewWhat = document.getElementById('review-what') as HTMLElement;
+const reviewBody = document.getElementById('review-body') as HTMLTextAreaElement;
+const reviewError = document.getElementById('review-error') as HTMLElement;
+
+const themeBtn = document.getElementById('theme-btn') as HTMLButtonElement;
+const themeDialog = document.getElementById('theme-dialog') as HTMLDialogElement;
+const themesEl = document.getElementById('themes') as HTMLElement;
+
+const SPINNER = '<span class="spin"></span>';
+
+const graphBusy = document.getElementById('graph-busy') as HTMLElement;
+const graphBusyText = document.getElementById('graph-busy-text') as HTMLElement;
+const graphBusyBar = document.getElementById('graph-busy-bar') as HTMLProgressElement;
+const graphBusyCount = document.getElementById('graph-busy-count') as HTMLElement;
+
+/**
+ * Anything slow enough to wonder about. Said twice: in the status line, and over the
+ * graph itself, which is where the eyes are and which is otherwise still showing the
+ * previous answer as if nothing had been asked.
+ */
+const busy = (text: string, done?: number, total?: number) => {
+  // A count when the work can be counted; otherwise the bar stays away rather than
+  // pretend to measure something it cannot.
+  const counted = done !== undefined && total !== undefined && total > 0;
+  status.innerHTML = `${SPINNER} ${esc(text)}${counted ? ` ${done} / ${total}` : ''}`;
+  graphBusyText.textContent = text;
+  graphBusyBar.hidden = !counted;
+  graphBusyCount.textContent = counted ? `${done} of ${total} files` : '';
+  if (counted) {
+    graphBusyBar.max = total;
+    graphBusyBar.value = done;
+  }
+  graphBusy.hidden = false;
+};
+
+/** Whatever was being waited for has arrived, or failed; the graph is live again. */
+const idle = () => {
+  graphBusy.hidden = true;
+};
+
+/** Let the browser paint what was just changed before the next thing blocks it. */
+const painted = () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+
+/**
+ * The two revisions on screen. Branches mode reads them off the selects; pull request
+ * mode gets them from the PR, so nothing else has to know which mode it is in.
+ */
+let rev = { base: '', compare: '' };
+let mode: 'branches' | 'prs' = 'branches';
+let prs: Pr[] = [];
+/** The pull request under review, with the commit its head was at when fetched. */
+let pr: { number: number; sha: string; base: string; compare: string } | null = null;
+let comments: PrComment[] = [];
+/** Unsent comments per PR number: switching PR or mode must not throw work away. */
+const draftsByPr: Record<number, Draft[]> = {};
+
+const drafts = (): Draft[] => (pr ? (draftsByPr[pr.number] ??= []) : []);
+const reviewing = () => mode === 'prs' && pr !== null;
 
 const BADGE: Record<ChangeStatus, string> = {
   A: 'badge-success',
@@ -402,7 +480,7 @@ const linkTargets = (id: string): Map<string, LinkTarget> => {
   return targets;
 };
 
-const diffTable = (rows: Extract<FileDiff, { ok: true }>['rows']): string => {
+const diffTable = (rows: Extract<FileDiff, { ok: true }>['rows'], review = false): string => {
   // Highlight each side as one block, not line by line: a JSDoc comment or template
   // literal spanning several lines only colours correctly with its own context.
   const visible = rows.filter((r) => r.kind !== 'gap');
@@ -419,6 +497,15 @@ const diffTable = (rows: Extract<FileDiff, { ok: true }>['rows']): string => {
   const fade = fadeFor(visible);
   const ctx = (i: number) => `class="ctx" style="--fade:${fade[i]}"`;
 
+  // Every numbered gutter cell says which line of which side it is: that is where an
+  // existing comment hangs, and what a new one is sent with. `can` marks the ones
+  // GitHub will take a comment on.
+  const can = review ? commentable(visible) : [];
+  const gutter = (n: number | null, pick: 'left' | 'right', i: number, offer = true) =>
+    n === null
+      ? '<td class="no"></td>'
+      : `<td class="no${offer && can[i] ? ' can' : ''}" data-line="${n}" data-side="${pick === 'left' ? 'LEFT' : 'RIGHT'}">${n}</td>`;
+
   // One-sided slice (an added function, or a purely additive change): a single
   // column, not a column of blanks next to the code.
   if (!sides.left || !sides.right) {
@@ -433,28 +520,30 @@ const diffTable = (rows: Extract<FileDiff, { ok: true }>['rows']): string => {
         }
         const no = only === 'right' ? row.rightNo : row.leftNo;
         const attrs = row.kind === 'context' ? ctx(i) : `class="${only === 'right' ? 'add' : 'del'}"`;
-        return `<tr ${attrs}><td class="no">${no ?? ''}</td><td class="code ${only}">${lines[i] ?? ''}</td></tr>`;
+        return `<tr ${attrs}>${gutter(no, only, i)}<td class="code ${only}">${lines[i] ?? ''}</td></tr>`;
       })
       .join('');
     const cols = '<colgroup><col class="c-no" /><col class="c-code-full" /></colgroup>';
     return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
   }
 
-  const cell = (no: number | null, html: string | null, side: 'left' | 'right') =>
+  const cell = (no: number | null, html: string | null, side: 'left' | 'right', i: number, offer = true) =>
     html === null
       ? `<td class="no"></td><td class="code ${side} blank"></td>`
-      : `<td class="no">${no ?? ''}</td><td class="code ${side}">${html}</td>`;
+      : `${gutter(no, side, i, offer)}<td class="code ${side}">${html}</td>`;
 
   const body = visible
     .map((row, i) => {
       if (row.kind === 'context') {
-        return `<tr ${ctx(i)}>${cell(row.leftNo, left[i] ?? '', 'left')}${cell(row.rightNo, right[i] ?? '', 'right')}</tr>`;
+        // An unchanged line is one line; offering it twice would be two ways to say
+        // the same thing, so the comment goes on the compare side.
+        return `<tr ${ctx(i)}>${cell(row.leftNo, left[i] ?? '', 'left', i, false)}${cell(row.rightNo, right[i] ?? '', 'right', i)}</tr>`;
       }
       const cls = [row.left !== null ? 'del' : '', row.right !== null ? 'add' : ''].join(' ').trim();
       return (
         `<tr class="${cls}">` +
-        cell(row.leftNo, row.left === null ? null : left[i] ?? '', 'left') +
-        cell(row.rightNo, row.right === null ? null : right[i] ?? '', 'right') +
+        cell(row.leftNo, row.left === null ? null : left[i] ?? '', 'left', i) +
+        cell(row.rightNo, row.right === null ? null : right[i] ?? '', 'right', i) +
         '</tr>'
       );
     })
@@ -467,6 +556,118 @@ const diffTable = (rows: Extract<FileDiff, { ok: true }>['rows']): string => {
   return `<div class="diff-scroll"><table class="diff">${cols}${body}</table></div>`;
 };
 
+const LOADING = '<p class="path"><span class="spin"></span></p>';
+
+const when = (iso: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '');
+
+/**
+ * Hang comments under the lines they are about: what is already on the pull request,
+ * then whatever is drafted and not yet sent. Rebuilt from state each time, so adding
+ * or dropping a draft is one call rather than surgery on the table.
+ */
+const showThreads = (host: HTMLElement) => {
+  for (const old of host.querySelectorAll('tr.thread')) {
+    old.remove();
+  }
+  const path = host.dataset.path;
+  if (!reviewing() || !path) {
+    return;
+  }
+
+  const width = host.querySelector('col.c-code') ? 4 : 2;
+  const posted = comments.filter((c) => c.path === path).sort((a, b) => a.at.localeCompare(b.at));
+
+  for (const cell of host.querySelectorAll<HTMLElement>('td.no[data-line]')) {
+    const at = (c: { line: number; side: Side }) =>
+      String(c.line) === cell.dataset.line && c.side === cell.dataset.side;
+
+    const items = [
+      ...posted
+        .filter(at)
+        .map(
+          (c) =>
+            `<div class="comment"><div class="who"><strong>${esc(c.user)}</strong> ${esc(when(c.at))}</div>${esc(c.body)}</div>`,
+        ),
+      ...drafts().flatMap((d, i) =>
+        d.path === path && at(d)
+          ? [
+              `<div class="comment pending"><div class="who"><span class="badge badge-sm badge-warning">pending</span>` +
+                `<a class="drop" data-drop="${i}">remove</a></div>${esc(d.body)}</div>`,
+            ]
+          : [],
+      ),
+    ];
+
+    if (items.length > 0) {
+      cell.parentElement?.insertAdjacentHTML(
+        'afterend',
+        `<tr class="thread"><td colspan="${width}">${items.join('')}</td></tr>`,
+      );
+    }
+  }
+};
+
+const showReviewButton = () => {
+  reviewBtn.hidden = !reviewing();
+  const n = drafts().length;
+  reviewBtn.textContent = n > 0 ? `Review (${n})` : 'Review';
+};
+
+// Drafting a comment. Delegated for the same reason as the node links below: the
+// table these clicks land on is rebuilt on every selection.
+panel.addEventListener('click', (e) => {
+  const el = e.target as HTMLElement;
+  const host = document.getElementById('diff-body');
+  if (!host || !reviewing()) {
+    return;
+  }
+
+  const drop = el.closest<HTMLElement>('[data-drop]');
+  if (drop) {
+    drafts().splice(Number(drop.dataset.drop), 1);
+    showThreads(host);
+    showReviewButton();
+    return;
+  }
+
+  const line = el.closest<HTMLElement>('td.no.can');
+  if (line) {
+    host.querySelector('tr.draft')?.remove();
+    const width = host.querySelector('col.c-code') ? 4 : 2;
+    line.parentElement?.insertAdjacentHTML(
+      'afterend',
+      `<tr class="draft" data-line="${line.dataset.line}" data-side="${line.dataset.side}"><td colspan="${width}">` +
+        `<textarea class="textarea textarea-sm" rows="3" placeholder="Comment on line ${line.dataset.line}"></textarea>` +
+        `<div class="actions"><button class="btn btn-xs btn-primary" data-add>Add to review</button>` +
+        `<button class="btn btn-xs btn-ghost" data-cancel>Cancel</button></div></td></tr>`,
+    );
+    host.querySelector<HTMLTextAreaElement>('tr.draft textarea')?.focus();
+    return;
+  }
+
+  const form = el.closest<HTMLElement>('tr.draft');
+  if (!form) {
+    return;
+  }
+  if (el.closest('[data-add]')) {
+    const body = form.querySelector('textarea')?.value.trim() ?? '';
+    if (!body || !host.dataset.path) {
+      return;
+    }
+    drafts().push({
+      path: host.dataset.path,
+      line: Number(form.dataset.line),
+      side: form.dataset.side === 'LEFT' ? 'LEFT' : 'RIGHT',
+      body,
+    });
+    form.remove();
+    showThreads(host);
+    showReviewButton();
+  } else if (el.closest('[data-cancel]')) {
+    form.remove();
+  }
+});
+
 const showSource = async (id: string) => {
   const host = document.getElementById('diff-body');
   const range = span[id];
@@ -474,12 +675,10 @@ const showSource = async (id: string) => {
     return;
   }
 
-  host.innerHTML = '<p class="path">Loading…</p>';
-  const result = await window.diffish.source({
-    compare: compareSel.value,
-    file: fileOf(id),
-    range,
-  });
+  host.innerHTML = LOADING;
+  const result: Source = await window.mycelium
+    .source({ compare: rev.compare, file: fileOf(id), range })
+    .catch((e: Error) => ({ ok: false, error: `Could not read the source: ${e.message}` }));
 
   if (!result.ok) {
     host.innerHTML = `<div class="alert alert-error">${esc(result.error)}</div>`;
@@ -504,18 +703,21 @@ const showDiff = async (id: string) => {
     return;
   }
 
-  host.innerHTML = '<p class="path">Loading…</p>';
-  const result = await window.diffish.fileDiff({
-    base: baseSel.value,
-    compare: compareSel.value,
-    file: fileOf(id),
-    // Scope to just this function's lines. Without a span (a node we never parsed)
-    // fall back to the whole file rather than showing nothing. baseRange is absent
-    // for a new function, which is what keeps its left column clean.
-    range: span[id],
-    baseRange: baseSpan[id],
-    from: renamedFrom[fileOf(id)],
-  });
+  host.innerHTML = LOADING;
+  // A throw in main rejects this call; uncaught, the spinner would turn forever.
+  const result: FileDiff = await window.mycelium
+    .fileDiff({
+      base: rev.base,
+      compare: rev.compare,
+      file: fileOf(id),
+      // Scope to just this function's lines. Without a span (a node we never parsed)
+      // fall back to the whole file rather than showing nothing. baseRange is absent
+      // for a new function, which is what keeps its left column clean.
+      range: span[id],
+      baseRange: baseSpan[id],
+      from: renamedFrom[fileOf(id)],
+    })
+    .catch((e: Error) => ({ ok: false, error: `Could not load the diff: ${e.message}` }));
 
   if (!result.ok) {
     host.innerHTML = `<div class="alert alert-error">${esc(result.error)}</div>`;
@@ -524,8 +726,12 @@ const showDiff = async (id: string) => {
   host.innerHTML =
     result.rows.length === 0
       ? '<p class="path">No changes inside this function between the selected branches.</p>'
-      : diffTable(result.rows);
+      : diffTable(result.rows, reviewing());
   linkifyElement(host, linkTargets(id));
+  // After linkify, which walks every text node: a function name in someone's comment
+  // is prose, not a call site.
+  host.dataset.path = fileOf(id);
+  showThreads(host);
 };
 
 const showGhost = (id: string) => {
@@ -573,7 +779,7 @@ const showFile = (id: string) => {
       ${where ? `<span class="where">${esc(where)}</span>` : ''}
       ${
         hasDiff || hasSource
-          ? `<span class="opacity-60">${hasDiff ? `${esc(baseSel.value)} … ${esc(compareSel.value)}` : esc(compareSel.value)}</span>`
+          ? `<span class="opacity-60">${hasDiff ? `${esc(rev.base)} … ${esc(rev.compare)}` : esc(rev.compare)}</span>`
           : ''
       }
     </div>`;
@@ -716,20 +922,93 @@ const render = (result: Extract<Analysis, { ok: true }>) => {
   search.value = '';
 };
 
+/** Every theme DaisyUI ships, in the order its own site shows them. */
+const THEMES = [
+  'light', 'dark', 'cupcake', 'bumblebee', 'emerald',
+  'corporate', 'synthwave', 'retro', 'cyberpunk', 'valentine',
+  'halloween', 'garden', 'forest', 'aqua', 'lofi',
+  'pastel', 'fantasy', 'wireframe', 'black', 'luxury',
+  'dracula', 'cmyk', 'autumn', 'business', 'acid',
+  'lemonade', 'night', 'coffee', 'winter', 'dim',
+  'nord', 'sunset', 'caramellatte', 'abyss', 'silk',
+];
+
+const setTheme = (name: string) => {
+  if (!THEMES.includes(name)) {
+    return;
+  }
+  document.documentElement.dataset.theme = name;
+  try {
+    localStorage.setItem('theme', name);
+  } catch {
+    // Storage can be unavailable; the theme still applies for this session.
+  }
+  // The canvas holds colours, not variables: it has to be told the theme moved.
+  cy?.style(graphStyle());
+  for (const pick of themesEl.querySelectorAll<HTMLElement>('.theme-pick')) {
+    pick.classList.toggle('on', pick.dataset.pick === name);
+  }
+};
+
+// A painter's palette per theme: the board is the theme's page colour, the four blobs
+// its primary, secondary, accent and neutral. Only the icon carries data-theme, so the
+// name underneath stays in the colours of the theme you are actually in.
+const DOTS: [string, number, number][] = [
+  ['primary', 13.5, 6.5],
+  ['secondary', 17.5, 10.5],
+  ['accent', 8.5, 7.5],
+  ['neutral', 6.5, 12.5],
+];
+
+themesEl.innerHTML = THEMES.map(
+  (t) =>
+    `<button type="button" class="theme-pick" data-pick="${t}">` +
+    `<svg data-theme="${t}" viewBox="0 0 24 24" width="56" height="56" aria-hidden="true">` +
+    '<path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />' +
+    DOTS.map(([c, x, y]) => `<circle cx="${x}" cy="${y}" r="1.7" style="fill:var(--color-${c})" />`).join('') +
+    `</svg><span>${t}</span></button>`,
+).join('');
+
+themesEl.addEventListener('click', (e) => {
+  const pick = (e.target as HTMLElement).closest<HTMLElement>('.theme-pick');
+  if (pick?.dataset.pick) {
+    setTheme(pick.dataset.pick);
+  }
+});
+
+themeBtn.addEventListener('click', () => themeDialog.showModal());
+
+let savedTheme: string | null = null;
+try {
+  savedTheme = localStorage.getItem('theme');
+} catch {
+  // No storage, no memory: start on the default.
+}
+setTheme(savedTheme && THEMES.includes(savedTheme) ? savedTheme : 'retro');
+
 let analyseRun = 0;
+
+// Main reports each stage of an analysis as it reaches it. Only the newest run speaks:
+// an abandoned one is still finishing in the background and would otherwise argue.
+window.mycelium?.onProgress((p) => {
+  if (p.run === analyseRun) {
+    busy(p.text, p.done, p.total);
+  }
+});
 
 const analyse = async () => {
   // No branches means no repo — running git anyway is what dumped its usage screen.
-  if (!baseSel.value || !compareSel.value) {
+  if (!rev.base || !rev.compare) {
+    idle();
     return;
   }
 
-  status.textContent = 'Analysing…';
+  busy('Analysing…');
   const run = ++analyseRun;
   // A throw in main rejects this call. Without the catch the status sat on
   // "Analysing…" forever with no hint that anything had failed.
-  const result: Analysis = await window.diffish
-    .analyse({ base: baseSel.value, compare: compareSel.value })
+  const result: Analysis = await window.mycelium
+    .analyse({ ...rev, run })
     .catch((e: Error) => ({ ok: false, error: `Analysis failed: ${e.message}` }));
   // A newer pick started while this one ran; its answer is the one to show.
   if (run !== analyseRun) {
@@ -742,9 +1021,20 @@ const analyse = async () => {
     cy?.destroy();
     cy = null;
     graph = {};
+    idle();
+    return;
+  }
+
+  // The layout runs in one synchronous go and holds the window still while it does:
+  // on a big diff that is most of the wait. Say so first, and give the words a frame
+  // to reach the screen.
+  busy('Drawing the graph…');
+  await painted();
+  if (run !== analyseRun) {
     return;
   }
   render(result);
+  idle();
 };
 
 const fillBranches = (all: string[], base: string, current: string) => {
@@ -759,30 +1049,211 @@ const fillBranches = (all: string[], base: string, current: string) => {
   compareSel.disabled = all.length === 0;
 };
 
+const showMode = () => {
+  modeBranches.classList.toggle('tab-active', mode === 'branches');
+  modePrs.classList.toggle('tab-active', mode === 'prs');
+  byBranch.hidden = mode !== 'branches';
+  byPr.hidden = mode !== 'prs';
+  showReviewButton();
+};
+
+const analyseBranches = () => {
+  rev = { base: baseSel.value, compare: compareSel.value };
+  return analyse();
+};
+
+let prRun = 0;
+
+const pickPr = async (number: number) => {
+  const meta = prs.find((p) => p.number === number);
+  if (!meta) {
+    return;
+  }
+
+  busy(`Fetching #${number}…`);
+  const run = ++prRun;
+  const [picked, found] = await Promise.all([
+    window.mycelium
+      .pickPr({ number, base: meta.base })
+      .catch((e: Error): PickedPr => ({ ok: false, error: `Could not fetch the pull request: ${e.message}` })),
+    window.mycelium.prComments({ number }).catch((e: Error): Comments => ({ ok: false, error: e.message })),
+  ]);
+  // Another PR, or another mode, was picked while this one was on its way.
+  if (run !== prRun) {
+    return;
+  }
+
+  if (!picked.ok) {
+    status.textContent = 'Nothing to show';
+    panel.innerHTML = `<div class="alert alert-error">${esc(picked.error)}</div>`;
+    idle();
+    return;
+  }
+
+  pr = { number, sha: picked.sha, base: picked.base, compare: picked.compare };
+  comments = found.ok ? found.comments : [];
+  rev = { base: picked.base, compare: picked.compare };
+  // A review without the existing conversation is still a review; say it is missing
+  // rather than refuse to open the PR.
+  prRevs.textContent = `${picked.base} ← ${meta.head}${found.ok ? '' : ' · comments unavailable'}`;
+  prRevs.title = found.ok ? '' : found.error;
+  showReviewButton();
+  await analyse();
+};
+
+modeBranches.addEventListener('click', () => {
+  mode = 'branches';
+  prRun++;
+  showMode();
+  void analyseBranches();
+});
+
+modePrs.addEventListener('click', () => {
+  mode = 'prs';
+  showMode();
+  if (pr) {
+    // Back to the PR that was open, at the commit it was fetched at.
+    rev = { base: pr.base, compare: pr.compare };
+    void analyse();
+  }
+});
+
+prSel.addEventListener('change', () => {
+  if (prSel.value) {
+    void pickPr(Number(prSel.value));
+  }
+});
+
+let projectRun = 0;
+
+/** Ask gh what is open. Never holds up the graph: branches work without GitHub. */
+const loadPrs = async () => {
+  const run = ++projectRun;
+  modePrs.disabled = true;
+  modePrs.title = 'Looking for pull requests…';
+  const found: Prs = await window.mycelium.prs().catch((e: Error) => ({ ok: false, error: e.message }));
+  if (run !== projectRun) {
+    return;
+  }
+
+  prs = found.ok ? found.prs : [];
+  modePrs.disabled = prs.length === 0;
+  modePrs.title = found.ok ? (prs.length === 0 ? 'No open pull requests' : '') : found.error;
+  prSel.innerHTML =
+    '<option value="">Pick a pull request…</option>' +
+    prs
+      .map(
+        (p) =>
+          `<option value="${p.number}">#${p.number} ${esc(p.title)} · ${esc(p.author)}${p.draft ? ' (draft)' : ''}</option>`,
+      )
+      .join('');
+};
+
+reviewBtn.addEventListener('click', () => {
+  if (!pr) {
+    return;
+  }
+  const meta = prs.find((p) => p.number === pr?.number);
+  const n = drafts().length;
+  reviewWhat.textContent = `#${pr.number} ${meta?.title ?? ''} — ${n} line comment${n === 1 ? '' : 's'}`;
+  reviewError.innerHTML = '';
+  reviewDialog.showModal();
+});
+
+reviewDialog.addEventListener('click', async (e) => {
+  const button = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-event]');
+  const target = pr;
+  if (!button || !target) {
+    return;
+  }
+
+  const buttons = reviewDialog.querySelectorAll<HTMLButtonElement>('button');
+  for (const b of buttons) {
+    b.disabled = true;
+  }
+  reviewError.innerHTML = `<p class="path">${SPINNER} Sending to GitHub…</p>`;
+
+  const sent: Submitted = await window.mycelium
+    .submitReview({
+      number: target.number,
+      sha: target.sha,
+      event: button.dataset.event as ReviewEvent,
+      body: reviewBody.value,
+      drafts: draftsByPr[target.number] ?? [],
+    })
+    .catch((e: Error) => ({ ok: false, error: e.message }));
+
+  for (const b of buttons) {
+    b.disabled = false;
+  }
+
+  if (!sent.ok) {
+    // The drafts stay exactly as they were: a rejected review is not a lost one.
+    reviewError.innerHTML = `<div class="alert alert-error">${esc(sent.error)}</div>`;
+    return;
+  }
+
+  draftsByPr[target.number] = [];
+  reviewBody.value = '';
+  reviewError.innerHTML = '';
+  reviewDialog.close();
+
+  const found = await window.mycelium.prComments({ number: target.number }).catch(() => null);
+  // Only if that PR is still the one on screen.
+  if (found?.ok && pr?.number === target.number) {
+    comments = found.comments;
+  }
+  showReviewButton();
+  const host = document.getElementById('diff-body');
+  if (host) {
+    showThreads(host);
+  }
+});
+
 openBtn.addEventListener('click', async () => {
-  const project = await window.diffish.pickProject();
+  const before = status.innerHTML;
+  // Covers the folder dialog too, but mostly the fetch behind it, which can take a
+  // while on a slow remote and used to look like a hang.
+  busy('Opening…');
+  const project = await window.mycelium.pickProject().catch(() => null);
   if (project === null) {
+    status.innerHTML = before;
+    idle();
     return;
   }
 
   fillBranches(project.branches, project.base, project.current);
 
+  // A new project: nothing about the last one's pull requests carries over.
+  mode = 'branches';
+  pr = null;
+  prs = [];
+  comments = [];
+  prRun++;
+  prRevs.textContent = '';
+  prSel.innerHTML = '';
+  modePrs.disabled = true;
+  showMode();
+
   if ('error' in project) {
     // Nothing to diff without git, so stop here rather than run git on a non-repo.
+    projectRun++;
+    modePrs.title = project.error;
     status.textContent = 'Nothing to show';
-    panel.innerHTML = `<div class="alert alert-error">${esc(project.error)}</div><p class="path">diffish compares two branches, so it needs a git repository.</p>`;
+    panel.innerHTML = `<div class="alert alert-error">${esc(project.error)}</div><p class="path">mycelium compares two branches, so it needs a git repository.</p>`;
     cy?.destroy();
     cy = null;
     graph = {};
+    idle();
     return;
   }
 
-  status.textContent = project.root;
-  await analyse();
+  void loadPrs();
+  await analyseBranches();
 });
 
-baseSel.addEventListener('change', analyse);
-compareSel.addEventListener('change', analyse);
+baseSel.addEventListener('change', analyseBranches);
+compareSel.addEventListener('change', analyseBranches);
 
 // Visual filter only — never re-runs the layout, so nodes keep their positions.
 search.addEventListener('input', () => {

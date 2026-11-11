@@ -138,12 +138,8 @@ export const sliceRows = (
 const FADE_FLOOR = 0.3;
 const FADE_STEP = 0.12;
 
-/**
- * Per row, an opacity from its distance to the nearest change: 1 on or next to a
- * change, easing down to FADE_FLOOR. Draws the eye to the edit inside a whole
- * function. A slice with no changes at all stays fully lit.
- */
-export const fadeFor = (rows: DiffRow[]): number[] => {
+/** Per row, how many rows away the nearest change is. Infinity when there is none. */
+const changeDistance = (rows: DiffRow[]): number[] => {
   const dist = rows.map(() => Infinity);
   let last = -Infinity;
   for (let i = 0; i < rows.length; i++) {
@@ -159,7 +155,33 @@ export const fadeFor = (rows: DiffRow[]): number[] => {
     }
     dist[i] = Math.min(dist[i], last - i);
   }
-  return dist.map((d) => (d === Infinity ? 1 : Math.max(FADE_FLOOR, 1 - Math.max(0, d - 1) * FADE_STEP)));
+  return dist;
+};
+
+/**
+ * Per row, an opacity from its distance to the nearest change: 1 on or next to a
+ * change, easing down to FADE_FLOOR. Draws the eye to the edit inside a whole
+ * function. A slice with no changes at all stays fully lit.
+ */
+export const fadeFor = (rows: DiffRow[]): number[] => {
+  return changeDistance(rows).map((d) =>
+    d === Infinity ? 1 : Math.max(FADE_FLOOR, 1 - Math.max(0, d - 1) * FADE_STEP),
+  );
+};
+
+/** Unchanged lines either side of a change that GitHub keeps in a pull request's diff. */
+const GITHUB_CONTEXT = 3;
+
+/**
+ * Per row, whether GitHub will take a review comment there.
+ *
+ * It only accepts lines inside the pull request's own hunks — a change and the three
+ * lines around it — while the panel shows the whole function. Rows between a context
+ * line and its nearest change are all context, one line each, so distance in rows is
+ * distance in lines.
+ */
+export const commentable = (rows: DiffRow[]): boolean[] => {
+  return changeDistance(rows).map((d) => d <= GITHUB_CONTEXT);
 };
 
 export type SourceLine = { no: number; text: string };

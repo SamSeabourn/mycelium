@@ -190,12 +190,66 @@ export const showFile = async (root: string, ref: string, file: string): Promise
   }
 };
 
+/**
+ * Parse `git for-each-ref --format=%(refname) refs/heads refs/remotes` into names git
+ * accepts as revisions: `main`, `origin/their-branch`. Full refnames in, because the
+ * short form of `refs/remotes/origin/HEAD` varies by git version and it has to go —
+ * it is a pointer at another branch already in the list.
+ */
+export const parseBranches = (stdout: string): string[] => {
+  return stdout
+    .split('\n')
+    .map((ref) => ref.trim())
+    .filter((ref) => ref && !ref.endsWith('/HEAD'))
+    .map((ref) => ref.replace(/^refs\/(heads|remotes)\//, ''));
+};
+
+/**
+ * Best-effort refresh of remote-tracking branches, so a colleague's branch pushed
+ * since the last fetch is there to pick. Offline, no remote, no credentials: all
+ * fine, the list is just as stale as it was.
+ */
+export const fetchRemotes = async (root: string): Promise<void> => {
+  // tradeoff: blocks project open for up to 15s on a slow remote; move to a
+  // background refresh if that ever hurts.
+  await run('git', ['fetch', '--all', '--prune', '--quiet'], {
+    cwd: root,
+    timeout: 15_000,
+    // Never sit waiting on a username prompt nobody can see.
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  }).catch(() => {});
+};
+
+/**
+ * Bring a pull request's head into the repo as `pr/<n>`, a remote-tracking ref.
+ *
+ * GitHub publishes every PR at `refs/pull/<n>/head`, fork or not, so this reaches
+ * branches that never exist on origin. Kept under refs/remotes so it lists like any
+ * other remote branch and `fetch --prune` (which only owns origin/*) leaves it alone.
+ * The sha is what a review gets pinned to: the commit on screen, not whatever the PR
+ * has moved to since.
+ */
+export const fetchPr = async (root: string, number: number): Promise<GitResult<{ ref: string; sha: string }>> => {
+  const ref = `pr/${number}`;
+  try {
+    // tradeoff: assumes the PR lives on `origin`. A fork checkout whose PRs are on
+    // `upstream` needs the remote resolved first (gh repo view) — add when it comes up.
+    await run('git', ['fetch', '--quiet', 'origin', `+refs/pull/${number}/head:refs/remotes/${ref}`], {
+      cwd: root,
+      timeout: 30_000,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    });
+    const sha = (await git(root, ['rev-parse', `refs/remotes/${ref}`])).trim();
+    return { ok: true, ref, sha };
+  } catch (e) {
+    return { ok: false, error: message(e) };
+  }
+};
+
 export const branches = async (root: string): Promise<GitResult<{ all: string[]; current: string }>> => {
   try {
-    const all = (await git(root, ['branch', '--format=%(refname:short)']))
-      .split('\n')
-      .map((b) => b.trim())
-      .filter(Boolean);
+    // Local first, then remote-tracking: a colleague's PR is usually only the latter.
+    const all = parseBranches(await git(root, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes']));
 
     if (all.length === 0) {
       return { ok: false, error: 'Repository has no commits yet' };
@@ -244,7 +298,7 @@ export const withBranchCheckout = async <T>(
   branch: string,
   fn: (dir: string) => Promise<T>,
 ): Promise<T> => {
-  const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'diffish-'));
+  const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'mycelium-'));
   // `git worktree add` refuses a path that already exists, so point it at a child
   // of the temp dir rather than the temp dir itself.
   const dir = path.join(parent, 'tree');
